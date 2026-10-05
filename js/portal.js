@@ -1,5 +1,5 @@
 /* Formulario y seguimiento de solicitudes (Liga 1). Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=3';
+import * as API from './servidor.js?v=4';
 window.API = API;
 (function () {
     'use strict';
@@ -289,8 +289,7 @@ window.API = API;
             texto('solicitante', 'Nombre completo', { req: true, max: 120, auto: 'name', recordar: true }),
             lista('area', 'Área', cfg.areas, { req: true, recordar: true }),
             texto('correo', 'Correo', { req: true, tipo: 'email', auto: 'email', recordar: true }),
-            texto('telefono', 'Teléfono o extensión', { req: true, tipo: 'tel', max: 40, auto: 'tel', recordar: true }),
-            texto('autoriza', 'Autoriza (jefe o responsable)', { max: 120, ayuda: 'Opcional.', recordar: true }))),
+            texto('telefono', 'Teléfono o extensión', { req: true, tipo: 'tel', max: 40, auto: 'tel', recordar: true }))),
         h('section', { class: 'tarjeta' }, h('h2', null, 'Archivos (opcional)'),
           h('div', { class: 'rejilla' }, selector('archivos', 'Factura, autorización, lista de empaque u otros', generales, '.pdf,.jpg,.jpeg,.png,.webp,.xlsx,.xls,.docx',
             { ayuda: 'PDF, imagen, Excel o Word de hasta ' + cfg.max_mb + ' MB cada uno.' }))));
@@ -378,7 +377,7 @@ window.API = API;
           enfocar(faltan[0]);
           return;
         }
-        try { localStorage.setItem(GUARDADO, JSON.stringify({ solicitante: datos.solicitante, area: datos.area, correo: datos.correo, telefono: datos.telefono, autoriza: datos.autoriza })); } catch (e) { /* sin almacenamiento */ }
+        try { localStorage.setItem(GUARDADO, JSON.stringify({ solicitante: datos.solicitante, area: datos.area, correo: datos.correo, telefono: datos.telefono })); } catch (e) { /* sin almacenamiento */ }
         var porSubir = (devolucion ? evidencias.map(function (f) { return { file: f, clase: 'evidencia' }; }) : [])
           .concat(generales.map(function (f) { return { file: f, clase: '' }; }));
         U.ocupado(enviar, true, 'Enviando…');
@@ -505,7 +504,7 @@ window.API = API;
 
       partes.push(h('section', { class: 'tarjeta' }, h('h2', null, 'Detalle de la solicitud'),
         h('dl', { class: 'datos' }, [
-          ['Área', s.area], ['Teléfono', s.telefono], ['Autoriza', s.autoriza], ['Folio', s.referencia], ['Factura', s.cliente],
+          ['Área', s.area], ['Teléfono', s.telefono], ['Folio', s.referencia], ['Factura', s.cliente],
           ['Requiere cita', s.horario], ['Dirección de origen', s.origen_direccion], ['Contacto en origen', s.origen_contacto],
           ['Dirección de destino', s.destino_direccion], ['Contacto en destino', s.destino_contacto], ['Motivo y detalles', s.motivo]
         ].filter(function (d) { return d[1]; }).map(function (d) { return h('div', null, h('dt', null, d[0]), h('dd', { style: 'font-weight:500;white-space:pre-wrap' }, d[1])); }))));

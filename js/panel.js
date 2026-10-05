@@ -1,5 +1,5 @@
 /* Panel de Logística (Liga 2): base de solicitudes. Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=3';
+import * as API from './servidor.js?v=4';
 window.API = API;
 (function () {
     'use strict';
@@ -253,7 +253,7 @@ window.API = API;
             U.estado(cfg, s.estado), s.prioridad === 'Urgente' ? h('span', { class: 'pill urgente' }, 'Urgente') : null)),
         U.pasos(cfg, s.estado),
         h('div', { style: 'height:12px' }),
-        info([['Solicita', s.solicitante + ' · ' + s.area], ['Correo', s.correo], ['Teléfono', s.telefono], ['Autoriza', s.autoriza],
+        info([['Solicita', s.solicitante + ' · ' + s.area], ['Correo', s.correo], ['Teléfono', s.telefono],
           ['Forma de envío', s.forma_envio], ['Folio', s.referencia], ['Factura', s.cliente], ['Requiere cita', s.horario]]));
 
       var ruta = h('section', { class: 'tarjeta' }, h('h2', null, 'Ruta y motivo'),
