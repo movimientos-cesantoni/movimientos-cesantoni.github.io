@@ -4,7 +4,7 @@
  * La seguridad real la imponen las reglas de Firestore (firestore.rules, bloque «Solicitudes de movimientos»).
  */
 import * as fb from './firebase-sdk.js?v=13';
-import * as C from './catalogos.js?v=1';
+import * as C from './catalogos.js?v=3';
 
 const CFG = window.CP_CONFIG || {};
 const COL = { config: 'sm_config', admins: 'sm_admins', inv: 'sm_invitaciones', sol: 'sm_solicitudes', correos: 'sm_correos' };
@@ -293,6 +293,7 @@ export async function crearSolicitud(datos, cuenta) {
     datos: [['Prioridad', sol.prioridad], ['Forma de envío', sol.forma_envio],
       ['Ruta', sol.origen_nombre + ', ' + sol.origen_ciudad + ' → ' + sol.destino_nombre + ', ' + sol.destino_ciudad]]
       .concat(sol.paq_total ? [['Paquetes', sol.paq_total + ' · ' + sol.paq_peso_kg + ' kg (volumétrico ' + sol.paq_vol_kg + ' kg)\n' + sol.paquetes]] : [])
+      .concat(sol.horario === 'Sí' ? [['Cita', 'Se requiere cita para entregar o recoger']] : [])
       .concat(sol.tipo === 'devolucion' ? [['Devolución', sol.dev_motivo + ' · ' + (sol.dev_cumple === 'Sí' ? 'cumple todos los puntos' : 'NO cumple todos los puntos: revisar')]] : []),
     boton: { texto: 'Abrir en el panel', url: urlPanel(folio) } });
   return { folio, clave: claveNueva, solicitud: await vistaPublica(folio) };
@@ -442,7 +443,7 @@ export async function adminCambiarPassword(_t, actual, nueva) {
 export async function adminDatos() {
   const a = await sesionPanel(true);
   const lista = (await getAll(col(COL.sol))).map((s) => ({ folio: s.folio, creada: s.creada, actualizada: s.actualizada, estado: s.estado,
-    prioridad: s.prioridad, tipo: s.tipo, area: s.area, solicitante: s.solicitante, correo: s.correo, cliente: s.cliente, referencia: s.referencia,
+    prioridad: s.prioridad, tipo: s.tipo, area: s.area, solicitante: s.solicitante, correo: s.correo, cliente: s.cliente, referencia: s.referencia, cita: s.horario || '',
     origen: s.origen_nombre + ', ' + s.origen_ciudad, destino: s.destino_nombre + ', ' + s.destino_ciudad, dev_motivo: s.dev_motivo || '',
     dev_cumple: s.dev_cumple || '', forma_envio: s.forma_envio || '', paq_total: s.paq_total || '', paq_peso_kg: s.paq_peso_kg || '',
     folio_cstext: s.folio_cstext || '', categorizacion: s.categorizacion || '', responsable: s.responsable || '', transportista: s.transportista || '',

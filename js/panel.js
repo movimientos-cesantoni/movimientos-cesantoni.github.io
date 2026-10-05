@@ -1,5 +1,5 @@
 /* Panel de Logística (Liga 2): base de solicitudes. Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=1';
+import * as API from './servidor.js?v=3';
 window.API = API;
 (function () {
     'use strict';
@@ -178,7 +178,8 @@ window.API = API;
                 h('td', null, tipoNombre(s.tipo), s.tipo === 'devolucion' ? h('div', { style: 'margin-top:4px' },
                   h('span', { class: 'pill ' + (s.dev_cumple === 'Sí' ? 'e-completada' : 'e-rechazada') }, s.dev_cumple === 'Sí' ? 'Cumple' : 'No cumple')) : null,
                   s.forma_envio ? h('div', { class: 'sub' }, s.forma_envio + (s.paq_total ? ' · ' + s.paq_total + ' paq. · ' + s.paq_peso_kg + ' kg' : '')) : null,
-                  s.referencia ? h('div', { class: 'sub' }, s.referencia) : null),
+                  s.referencia ? h('div', { class: 'sub' }, 'Folio ' + s.referencia) : null,
+                  s.cita === 'Sí' ? h('div', { style: 'margin-top:4px' }, h('span', { class: 'pill e-informacion' }, 'Requiere cita')) : null),
                 h('td', null, s.solicitante, h('div', { class: 'sub' }, s.area)),
                 h('td', null, s.origen, h('div', { class: 'sub' }, '→ ' + s.destino)),
                 h('td', { style: 'white-space:nowrap' }, s.fecha_programada ? U.dia(s.fecha_programada) : h('span', { class: 'gris' }, '—'),
@@ -191,7 +192,7 @@ window.API = API;
             })))));
       }
       function filtro(key, el) { el.addEventListener(el.tagName === 'INPUT' ? 'input' : 'change', function () { filtros[key] = el.value.trim(); pintar(); }); return el; }
-      var q = filtro('q', h('input', { class: 'entrada', type: 'search', placeholder: 'Folio, solicitante, cliente, ciudad, guía…', value: filtros.q }));
+      var q = filtro('q', h('input', { class: 'entrada', type: 'search', placeholder: 'Folio, factura, solicitante, ciudad, guía…', value: filtros.q }));
       var acciones = h('div', { class: 'acciones' },
         h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { cargar().then(tablero); } }, 'Actualizar'),
         h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { exportar(filtradas()); } }, 'Exportar a Excel (CSV)'));
@@ -212,7 +213,7 @@ window.API = API;
 
     function exportar(items) {
       var cols = [['folio', 'Folio'], ['creada', 'Creada'], ['estado', 'Estado'], ['prioridad', 'Prioridad'], ['tipo', 'Tipo'], ['area', 'Área'],
-        ['solicitante', 'Solicitante'], ['correo', 'Correo'], ['cliente', 'Cliente'], ['referencia', 'Referencia'],
+        ['solicitante', 'Solicitante'], ['correo', 'Correo'], ['referencia', 'Folio'], ['cliente', 'Factura'], ['cita', 'Requiere cita'],
         ['origen', 'Origen'], ['destino', 'Destino'], ['forma_envio', 'Forma de envío'], ['paq_total', 'Paquetes'],
         ['paq_peso_kg', 'Peso paquetes (kg)'], ['dev_motivo', 'Motivo devolución'], ['dev_cumple', 'Devolución cumple'],
         ['folio_cstext', 'Folio CSTEXT'], ['categorizacion', 'Categorización'], ['responsable', 'Responsable'], ['transportista', 'Transportista'],
@@ -253,7 +254,7 @@ window.API = API;
         U.pasos(cfg, s.estado),
         h('div', { style: 'height:12px' }),
         info([['Solicita', s.solicitante + ' · ' + s.area], ['Correo', s.correo], ['Teléfono', s.telefono], ['Autoriza', s.autoriza],
-          ['Forma de envío', s.forma_envio], ['Horario en sitio', s.horario], ['Cliente', s.cliente], ['Referencia', s.referencia]]));
+          ['Forma de envío', s.forma_envio], ['Folio', s.referencia], ['Factura', s.cliente], ['Requiere cita', s.horario]]));
 
       var ruta = h('section', { class: 'tarjeta' }, h('h2', null, 'Ruta y motivo'),
         info([['Origen', s.origen_nombre + '\n' + s.origen_direccion + '\n' + s.origen_ciudad], ['Contacto en origen', s.origen_contacto],

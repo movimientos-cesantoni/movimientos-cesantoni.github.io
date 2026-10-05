@@ -1,5 +1,5 @@
 /* Formulario y seguimiento de solicitudes (Liga 1). Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=1';
+import * as API from './servidor.js?v=3';
 window.API = API;
 (function () {
     'use strict';
@@ -135,6 +135,7 @@ window.API = API;
       }
       function valor(key) {
         var c = campos[key];
+        if (c.casilla) return c.casilla.checked ? 'Sí' : '';
         if (c.multiple) return Array.prototype.map.call(c.control.querySelectorAll('input:checked'), function (x) { return x.value; });
         if (c.grupo) { var sel = c.control.querySelector('input:checked'); return sel ? sel.value : ''; }
         return c.control.value.trim();
@@ -146,6 +147,13 @@ window.API = API;
         }));
         var wrap = campo(key, label, box, Object.assign({ grupo: true, todo: true }, opts));
         campos[key].multiple = true;
+        return wrap;
+      }
+      /* Una sola casilla de Sí/No: guarda «Sí» cuando está marcada. */
+      function casilla(key, label, texto, opts) {
+        var el = h('input', { type: 'checkbox', value: 'Sí' });
+        var wrap = campo(key, label, h('label', { class: 'casilla' }, el, h('span', null, texto)), Object.assign({ grupo: true }, opts));
+        campos[key].casilla = el;
         return wrap;
       }
       /* Selector de archivos con lista para quitar antes de enviar. */
@@ -255,9 +263,10 @@ window.API = API;
             return [f, f, f === cfg.paqueteria ? 'Te pediremos las medidas y el peso de los paquetes.' : ''];
           }), { req: true }),
           texto('motivo', 'Motivo y detalles', { req: true, area: true, max: 2000, todo: true, ayuda: 'Qué se va a mover, cuánto y por qué. Mientras más claro, más rápido lo programamos.' }),
-          texto('cliente', 'Cliente relacionado', { max: 160, ayuda: 'Opcional.' }),
-          texto('referencia', 'Pedido, factura, nota de crédito o RMA', { max: 120, ayuda: 'Opcional.' }),
-          texto('horario', 'Horario de atención en sitio', { max: 80, todo: true, ayuda: 'Opcional. Ejemplo: lunes a viernes de 9:00 a 14:00.' }))),
+          texto('referencia', 'Folio', { max: 120, ayuda: 'Opcional. Folio del pedido, remisión o nota de crédito.' }),
+          texto('cliente', 'Factura', { max: 160, ayuda: 'Opcional. Número de factura relacionada.' }),
+          casilla('horario', 'Cita', 'Para entregar o recoger se requiere cita', { todo: true,
+            ayuda: 'Márcala si el lugar pide agendar cita. Logística te avisará qué día se puede hacer la cita o cuándo agendarla.' }))),
         seccionPaquetes);
       seccionDevolucion.hidden = false;
       var pasoDevolucion = h('div', { class: 'paso' }, seccionDevolucion);
@@ -496,8 +505,8 @@ window.API = API;
 
       partes.push(h('section', { class: 'tarjeta' }, h('h2', null, 'Detalle de la solicitud'),
         h('dl', { class: 'datos' }, [
-          ['Área', s.area], ['Teléfono', s.telefono], ['Autoriza', s.autoriza], ['Cliente', s.cliente], ['Referencia', s.referencia],
-          ['Horario en sitio', s.horario], ['Dirección de origen', s.origen_direccion], ['Contacto en origen', s.origen_contacto],
+          ['Área', s.area], ['Teléfono', s.telefono], ['Autoriza', s.autoriza], ['Folio', s.referencia], ['Factura', s.cliente],
+          ['Requiere cita', s.horario], ['Dirección de origen', s.origen_direccion], ['Contacto en origen', s.origen_contacto],
           ['Dirección de destino', s.destino_direccion], ['Contacto en destino', s.destino_contacto], ['Motivo y detalles', s.motivo]
         ].filter(function (d) { return d[1]; }).map(function (d) { return h('div', null, h('dt', null, d[0]), h('dd', { style: 'font-weight:500;white-space:pre-wrap' }, d[1])); }))));
 
