@@ -1,5 +1,5 @@
 /* Panel de Logística (Liga 2): base de solicitudes. Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=4';
+import * as API from './servidor.js?v=5';
 window.API = API;
 (function () {
     'use strict';
