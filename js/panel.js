@@ -442,37 +442,71 @@ window.API = API;
       ['CST', 'texto', 8, function (s) { return s.cst || 'CST'; }],
       ['SOLICITANTE', 'texto', 22, function (s) { return String(s.area || '').toUpperCase(); }]
     ];
-    var filtrosFact = { desde: '', hasta: '', ver: 'pendientes' };
+    /* Filtros de facturación: estatus, mes de carga (AAAA-MM) y facturadas o pendientes. */
+    var ESTATUS_FACT = [['completada', 'Completadas'], ['en_transito', 'En tránsito'], ['programada', 'Programadas'], ['activas', 'Todas']];
+    var filtrosFact = { estatus: 'completada', mes: '', ver: 'pendientes' };
+    var MESES_LARGO = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    function mesTexto(m) { return /^\d{4}-\d{2}$/.test(m || '') ? MESES_LARGO[Number(m.slice(5, 7)) - 1] + ' ' + m.slice(0, 4) : 'todos los meses'; }
+    function bajarArchivo(blob, nombre) {
+      var a = h('a', { href: URL.createObjectURL(blob), download: nombre });
+      document.body.appendChild(a); a.click(); setTimeout(function () { a.remove(); }, 1000);
+    }
+    var limpioArchivo = function (t) { return String(t).replace(/[^\wÁÉÍÓÚÑáéíóúñ-]+/g, '_'); };
     function facturacion() {
       nav('facturacion');
       if (!datos) { mount(main, h('p', { class: 'gris' }, 'Cargando…')); return; }
       var cont = h('div');
+      var esAdmin = yo.rol === 'admin';
       var fecha = function (s) { return s.fecha_programada || String(s.cerrada || '').slice(0, 10); };
+      var columnas = function (extra) {
+        return COLS_FACT.concat(extra ? [['ESTATUS', 'texto', 14, function (s) { return cfg.estados[s.estado] || s.estado; }],
+          ['FOLIO', 'texto', 15, function (s) { return s.folio; }], ['FACTURADA', 'fecha', 12, function (s) { return s.facturada || ''; }]] : []);
+      };
+      var hoja = function (nombre, items, extra) {
+        var cols = columnas(extra);
+        return { nombre: nombre, columnas: cols.map(function (c) { return { titulo: c[0], tipo: c[1], ancho: c[2] }; }),
+          filas: items.map(function (s) { return cols.map(function (c) { return c[3](s); }); }) };
+      };
       function grupos() {
         var mapa = {};
         datos.solicitudes.filter(function (s) {
           var f = fecha(s);
-          return s.estado === 'completada' && (!filtrosFact.desde || f >= filtrosFact.desde) && (!filtrosFact.hasta || f <= filtrosFact.hasta) &&
+          var estatus = filtrosFact.estatus === 'activas' ? ['programada', 'en_transito', 'completada'].indexOf(s.estado) >= 0 : s.estado === filtrosFact.estatus;
+          return estatus && (!filtrosFact.mes || f.slice(0, 7) === filtrosFact.mes) &&
             (filtrosFact.ver === 'todas' || (filtrosFact.ver === 'facturadas') === !!s.facturada);
         }).forEach(function (s) { var p = s.transportista || 'Sin proveedor asignado'; (mapa[p] = mapa[p] || []).push(s); });
         return Object.keys(mapa).sort().map(function (p) { return { proveedor: p, items: mapa[p].sort(function (a, b) { return fecha(a).localeCompare(fecha(b)); }) }; });
       }
       function descargar(g) {
-        var blob = libroXlsx([{ nombre: g.proveedor, columnas: COLS_FACT.map(function (c) { return { titulo: c[0], tipo: c[1], ancho: c[2] }; }),
-          filas: g.items.map(function (s) { return COLS_FACT.map(function (c) { return c[3](s); }); }) }]);
-        var a = h('a', { href: URL.createObjectURL(blob), download: 'Plantilla_' + g.proveedor.replace(/[^\wÁÉÍÓÚÑáéíóúñ]+/g, '_') + '_' + cfg.hoy + '.xlsx' });
-        document.body.appendChild(a); a.click(); setTimeout(function () { a.remove(); }, 1000);
+        bajarArchivo(libroXlsx([hoja(g.proveedor, g.items, false)]), 'Plantilla_' + limpioArchivo(g.proveedor) + '_' + (filtrosFact.mes || cfg.hoy) + '.xlsx');
+      }
+      /* Administrador: un solo Excel del mes, con una hoja por proveedor y un resumen al inicio. */
+      function descargarMes() {
+        var lista = grupos();
+        if (!lista.length) { U.toast('No hay entregas con estos filtros.', true); return; }
+        var resumen = { nombre: 'Resumen', columnas: [{ titulo: 'PROVEEDOR', tipo: 'izq', ancho: 30 }, { titulo: 'ENTREGAS', tipo: 'texto', ancho: 12 },
+          { titulo: 'MONTO TOTAL', tipo: 'moneda', ancho: 16 }, { titulo: 'SIN MONTO', tipo: 'texto', ancho: 12 }],
+          filas: lista.map(function (g) {
+            return [g.proveedor, String(g.items.length), g.items.reduce(function (t, s) { return t + (Number(s.monto) || 0); }, 0),
+              String(g.items.filter(function (s) { return s.monto === ''; }).length)];
+          }) };
+        bajarArchivo(libroXlsx([resumen].concat(lista.map(function (g) { return hoja(g.proveedor, g.items, true); }))),
+          'Facturacion_' + (filtrosFact.mes || 'todos') + '_' + limpioArchivo(ESTATUS_FACT.filter(function (e) { return e[0] === filtrosFact.estatus; })[0][1].split(' ')[0]) + '.xlsx');
       }
       function pintar() {
         var lista = grupos();
-        if (!lista.length) { mount(cont, h('div', { class: 'tarjeta', style: 'text-align:center' }, h('p', { class: 'gris', style: 'margin:0' }, 'No hay entregas concluidas con estos filtros.'))); return; }
+        var resumen = lista.reduce(function (t, g) { return { n: t.n + g.items.length, monto: t.monto + g.items.reduce(function (x, s) { return x + (Number(s.monto) || 0); }, 0) }; }, { n: 0, monto: 0 });
+        mount(cabeceraMes, h('p', { class: 'gris chico', style: 'margin:0' }, h('b', null, mesTexto(filtrosFact.mes)), ' · ' + resumen.n + (resumen.n === 1 ? ' entrega' : ' entregas') +
+          ' de ' + lista.length + (lista.length === 1 ? ' proveedor' : ' proveedores') + ' · total ' + (dinero(resumen.monto) || '$0.00')));
+        if (!lista.length) { mount(cont, h('div', { class: 'tarjeta', style: 'text-align:center' }, h('p', { class: 'gris', style: 'margin:0' }, 'No hay entregas con estos filtros.'))); return; }
         mount(cont, lista.map(function (g) {
           var total = g.items.reduce(function (t, s) { return t + (Number(s.monto) || 0); }, 0);
           var faltan = g.items.filter(function (s) { return s.monto === '' || !s.folio_cstext; }).length;
           var pendientes = g.items.filter(function (s) { return !s.facturada; });
           var bajar = h('button', { class: 'btn btn-pri btn-chico', type: 'button', onclick: function () { descargar(g); } }, '⬇ Descargar plantilla (Excel)');
-          var marcar = h('button', { class: 'btn btn-chico', type: 'button' }, pendientes.length ? 'Marcar como facturadas' : 'Quitar marca de facturadas');
-          marcar.addEventListener('click', function () {
+          /* Solo las entregas concluidas se marcan como facturadas. */
+          var marcar = filtrosFact.estatus !== 'completada' ? null : h('button', { class: 'btn btn-chico', type: 'button' }, pendientes.length ? 'Marcar como facturadas' : 'Quitar marca de facturadas');
+          if (marcar) marcar.addEventListener('click', function () {
             U.ocupado(marcar, true, 'Guardando…');
             run('adminMarcarFacturadas', (pendientes.length ? pendientes : g.items).map(function (s) { return s.folio; }), pendientes.length > 0)
               .then(function (d) { datos = d; U.toast(pendientes.length ? 'Marcadas como facturadas.' : 'Marca quitada.'); pintar(); })
@@ -484,27 +518,32 @@ window.API = API;
               h('div', { class: 'acciones' }, bajar, marcar)),
             faltan ? h('div', { class: 'aviso aviso-alerta', style: 'margin:12px 0 0' }, h('p', null, faltan + (faltan === 1 ? ' entrega no tiene' : ' entregas no tienen') + ' monto o consecutivo. Pide al planeador que los capture antes de facturar.')) : null,
             h('div', { class: 'tabla-caja', style: 'margin-top:12px' }, h('table', { class: 'tabla-fact' },
-              h('thead', null, h('tr', null, COLS_FACT.map(function (c) { return h('th', null, c[0]); }).concat([h('th', null, 'FACTURADA')]))),
+              h('thead', null, h('tr', null, COLS_FACT.map(function (c) { return h('th', null, c[0]); }).concat([h('th', null, 'ESTATUS'), h('th', null, 'FACTURADA')]))),
               h('tbody', null, g.items.map(function (s) {
                 var tr = h('tr', { tabindex: '0' }, COLS_FACT.map(function (c) {
                   var v = c[3](s);
                   return h('td', { class: c[1] === 'moneda' ? 'celda-monto' : c[1] === 'izq' ? '' : 'centro' }, c[1] === 'moneda' ? dinero(v) : c[1] === 'fecha' ? diaCorto(v) : v);
-                }).concat([h('td', { class: 'centro', style: 'white-space:nowrap' }, s.facturada ? U.dia(s.facturada) : h('span', { class: 'gris' }, 'Pendiente'),
+                }).concat([h('td', { class: 'centro' }, U.estado(cfg, s.estado)),
+                  h('td', { class: 'centro', style: 'white-space:nowrap' }, s.facturada ? U.dia(s.facturada) : h('span', { class: 'gris' }, 'Pendiente'),
                   s.folio !== s.folio_cstext ? h('div', { class: 'sub' }, s.folio) : null)]));
                 tr.addEventListener('click', function () { detalle(s.folio); });
                 return tr;
               })))));
         }));
       }
-      var desde = h('input', { class: 'entrada', type: 'date', value: filtrosFact.desde });
-      var hasta = h('input', { class: 'entrada', type: 'date', value: filtrosFact.hasta });
+      var estatus = lista(ESTATUS_FACT, filtrosFact.estatus);
+      var mes = h('input', { class: 'entrada', type: 'month', value: filtrosFact.mes, 'aria-label': 'Mes de carga' });
       var ver = lista([['pendientes', 'Pendientes de facturar'], ['facturadas', 'Ya facturadas'], ['todas', 'Todas']], filtrosFact.ver);
-      [[desde, 'desde'], [hasta, 'hasta'], [ver, 'ver']].forEach(function (x) { x[0].addEventListener('change', function () { filtrosFact[x[1]] = x[0].value; pintar(); }); });
+      [[estatus, 'estatus'], [mes, 'mes'], [ver, 'ver']].forEach(function (x) { x[0].addEventListener('change', function () { filtrosFact[x[1]] = x[0].value; pintar(); }); });
+      var cabeceraMes = h('div', { style: 'margin:-4px 0 14px' });
       mount(main,
         h('div', { class: 'cabecera', style: 'margin-bottom:14px' }, h('div', null, h('h1', { style: 'margin:0' }, 'Facturación'),
-          h('p', { class: 'gris chico', style: 'margin:4px 0 0' }, 'Entregas concluidas (Completadas), separadas por proveedor. Cada proveedor descarga su propia plantilla.')),
-          h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { cargar().then(facturacion); } }, 'Actualizar')),
-        h('div', { class: 'filtros filtros-fact' }, campo('Fecha de carga desde', desde), campo('Hasta', hasta), campo('Ver', ver)),
+          h('p', { class: 'gris chico', style: 'margin:4px 0 0' }, 'Entregas por estatus y mes de carga, separadas por proveedor. Cada proveedor descarga su propia plantilla.')),
+          h('div', { class: 'acciones' },
+            esAdmin ? h('button', { class: 'btn btn-osc btn-chico', type: 'button', onclick: descargarMes }, '⬇ Excel del mes (una hoja por proveedor)') : null,
+            h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { cargar().then(facturacion); } }, 'Actualizar'))),
+        h('div', { class: 'filtros filtros-fact' }, campo('Estatus', estatus), campo('Mes de carga', mes), campo('Ver', ver)),
+        cabeceraMes,
         cont);
       pintar();
     }

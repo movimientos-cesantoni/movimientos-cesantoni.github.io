@@ -37,7 +37,7 @@ responder una vez y con el token vigente; al reenviar o registrar a mano, la lig
 |---|---|
 | Administrador | Todo: solicitudes, facturación y configuración (personal, alertas por persona, catálogos y consecutivo CSTEXT). |
 | Planeador | Fecha de carga, estatus, monto, datos de la plantilla y autorizaciones. |
-| Facturación | Plantillas de entregas Completadas por proveedor (Excel), y las marca como facturadas. No puede cambiar solicitudes. |
+| Facturación | Plantillas por proveedor (Excel), con filtros por estatus y mes de carga; marca las entregas como facturadas. No puede cambiar solicitudes. El administrador además descarga el Excel del mes con una hoja por proveedor. |
 
 ## Modificaciones de quien solicita
 
@@ -45,7 +45,7 @@ Con «Modificar una solicitud» (folio, y correo + clave si no hay sesión) se a
 está «Recibida» y sin autorización enviada; después se muestra la leyenda de folio bloqueado, con «Crear nueva solicitud con estos datos» y
 «Avisar a Logística por correo». Cada modificación avisa a quien tenga activada la alerta «Solicitud modificada».
 
-Pruebas: `tests/solicitudes-web/e2e.mjs` (repositorio privado) con el emulador de Firebase: 141 de 141 correctas.
+Pruebas: `tests/solicitudes-web/e2e.mjs` (repositorio privado) con el emulador de Firebase: 146 de 146 correctas.
 
 ## Folio
 
