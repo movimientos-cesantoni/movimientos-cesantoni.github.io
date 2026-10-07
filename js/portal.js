@@ -135,7 +135,7 @@ window.API = API;
         return campo(key, label, el, opts);
       }
       function opciones(key, label, valores, opts) {
-        var box = h('div', { class: 'opciones', role: 'radiogroup' }, valores.map(function (v) {
+        var box = h('div', { class: 'opciones' + (opts && opts.centro ? ' opciones-centro' : ''), role: 'radiogroup' }, valores.map(function (v) {
           return h('label', { class: 'opcion' }, h('input', { type: 'radio', name: key, value: v[0] }),
             h('span', null, h('b', null, v[1]), v[2] ? h('small', null, v[2]) : null));
         }));
@@ -205,7 +205,7 @@ window.API = API;
 
       /* ---------- 1 · ¿Qué envías? */
       var pasoQue = h('div', { class: 'paso' }, seccion('¿Qué envías?', 'Elige el material que se va a transportar.',
-        opciones('producto_tipo', '¿Qué envías?', cfg.productos.map(function (p) { return [p[0], p[0], p[1]]; }), { req: true }),
+        opciones('producto_tipo', '¿Qué envías?', cfg.productos.map(function (p) { return [p[0], p[0], '']; }), { req: true, centro: true }),
         texto('producto_otro', 'Especificar qué envías', { req: true, max: 120, todo: true, aplica: function () { return valor('producto_tipo') === 'Otro'; },
           ejemplo: 'Ej.: lonas, equipo de cómputo, muestras' }),
         casilla('es_devolucion', null, 'Es una devolución de cliente (te pediremos fotos y la revisión del material)', { todo: true })));
