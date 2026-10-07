@@ -52,7 +52,10 @@ window.API = API;
         h('section', { class: 'tarjeta' },
           h('h1', null, '¿Necesitas mover algo?'),
           h('p', { class: 'gris' }, 'Pide aquí envíos, recolecciones, devoluciones y traslados a Logística: qué envías, de dónde sale, a dónde va, cómo se envía, quién paga y cuándo. Cada solicitud recibe un folio con su expediente y te avisamos por correo cada avance.'),
-          h('ul', { class: 'lista-tipos' }, cfg.tipos.map(function (t) { return h('li', null, h('b', null, t[1]), ' · ', h('span', { class: 'gris' }, t[2])); })),
+          h('ul', { class: 'lista-tipos' }, [['¿Qué envías?', 'producto, mobiliario, sillas, stands, regalos, vinos…'], ['¿De dónde y a dónde?', 'ubicación, link y contacto'],
+            ['¿Cómo y cuánto?', 'unidad dedicada o paquetería, con medidas y peso'], ['¿Quién paga y cuándo?', 'costo, documentos y fechas tentativas']].map(function (t) {
+            return h('li', null, h('b', null, t[0]), ' · ', h('span', { class: 'gris' }, t[1]));
+          })),
           h('p', { style: 'margin-top:18px' }, h('button', { class: 'btn btn-pri', type: 'button', onclick: formulario }, 'Nueva solicitud'))),
         h('section', { class: 'tarjeta' },
           h('h2', null, 'Mis solicitudes'),
@@ -189,7 +192,9 @@ window.API = API;
       var r1 = function (x) { return Math.round(x * 10) / 10; };
 
       /* Reglas que deciden qué campos aplican según lo elegido. */
-      var esTipo = function (t) { return function () { return valor('tipo') === t; }; };
+      /* El movimiento se deduce: devolución (casilla del paso 1), entrega con recolección posterior (casilla de fechas) o envío. */
+      function tipoActual() { return valor('es_devolucion') === 'Sí' ? 'devolucion' : valor('regresa') === 'Sí' ? 'entrega_recoleccion' : 'envio'; }
+      var esTipo = function (t) { return function () { return tipoActual() === t; }; };
       var fechaAbierta = function () { return valor('fecha_abierta') === 'Sí'; };
       var cesantoni = function () { return valor('costo_absorbe') === cfg.costo_autoriza; };
       var esPaqueteria = function () { return valor('forma_envio') === cfg.paqueteria; };
@@ -203,8 +208,7 @@ window.API = API;
         opciones('producto_tipo', '¿Qué envías?', cfg.productos.map(function (p) { return [p[0], p[0], p[1]]; }), { req: true }),
         texto('producto_otro', 'Especificar qué envías', { req: true, max: 120, todo: true, aplica: function () { return valor('producto_tipo') === 'Otro'; },
           ejemplo: 'Ej.: lonas, equipo de cómputo, muestras' }),
-        opciones('tipo', '¿Qué tipo de movimiento es?', cfg.tipos, { req: true }),
-        texto('tipo_otro', 'Especificar movimiento', { req: true, max: 120, todo: true, aplica: esTipo('otro') })));
+        casilla('es_devolucion', null, 'Es una devolución de cliente (te pediremos fotos y la revisión del material)', { todo: true })));
 
       /* ---------- 2 · Solicitante */
       var catalogoAreas = h('datalist', { id: 'cat-areas' }, cfg.areas.map(function (a) { return h('option', { value: a }); }));
@@ -361,6 +365,7 @@ window.API = API;
             casilla('fecha_abierta', null, 'Fecha abierta (aún no hay fecha definida)', { todo: true }),
             texto('fecha_recoleccion', 'Fecha tentativa de recolección posterior (regreso)', { req: true, tipo: 'date', min: cfg.hoy,
               aplica: function () { return esTipo('entrega_recoleccion')() && !fechaAbierta() && valor('recoleccion_abierta') !== 'Sí'; } }),
+            casilla('regresa', null, 'El material regresa después (se recoge en el destino y vuelve al origen)', { todo: true, aplica: function () { return !esTipo('devolucion')(); } }),
             casilla('recoleccion_abierta', ' ', 'Recolección posterior con fecha abierta', { aplica: function () { return esTipo('entrega_recoleccion')() && !fechaAbierta(); } }),
             aviso48,
             texto('aut_correo_gerente', 'Correo del Gerente de Área que autoriza', { req: true, correo: true, tipo: 'email', max: 160, todo: true,
@@ -453,6 +458,8 @@ window.API = API;
           c.wrap.classList.toggle('invalido', !!msg);
           if (msg) faltan.push(c.wrap);
         });
+        datos.tipo = tipoActual();
+        delete datos.es_devolucion; delete datos.regresa;
         datos.aut_correo = cesantoni() ? datos.aut_correo : datos.aut_correo_gerente;
         delete datos.aut_correo_gerente;
         datos.especificaciones = datos.especificaciones || [];
@@ -467,7 +474,7 @@ window.API = API;
 
       /* Resumen antes de enviar, con «Editar» en cada bloque. */
       function pintarResumen() {
-        var d = revisar(document.createElement('div')).datos, tipo = valor('tipo'), fuera = fueraDeTiempo(); // solo lee los datos
+        var d = revisar(document.createElement('div')).datos, tipo = tipoActual(), fuera = fueraDeTiempo(); // solo lee los datos
         var nombreTipo = (cfg.tipos.filter(function (t) { return t[0] === tipo; })[0] || ['', tipo])[1] + (tipo === 'otro' && d.tipo_otro ? ': ' + d.tipo_otro : '');
         var dia = function (v) { return v ? v.slice(8, 10) + '/' + v.slice(5, 7) + '/' + v.slice(0, 4) : ''; };
         var esp = d.especificaciones.map(function (g) {
