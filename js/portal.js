@@ -1,5 +1,5 @@
 /* Formulario y seguimiento de solicitudes (Liga 1). Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=7';
+import * as API from './servidor.js?v=10';
 window.API = API;
 (function () {
     'use strict';
