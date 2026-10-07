@@ -47,4 +47,4 @@ export const TIPOS_FIJOS = ["envio","entrega_recoleccion","devolucion"];
 export const CSTEXT_PREFIJO = "CSTEXT";
 export const CST = "CST";
 /* Concepto del cargo que define el planeador: separa las plantillas en carpetas. */
-export const CONCEPTOS = ["Flete","Maniobras"];
+export const CONCEPTOS = ["Flete","Maniobras","Paquetería"];

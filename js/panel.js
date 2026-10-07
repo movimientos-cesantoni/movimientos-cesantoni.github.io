@@ -1,7 +1,7 @@
 /* Panel de Logística (Liga 2): base de solicitudes. Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=16';
-import { libroXlsx, libroBytes, zipArchivos } from './xlsx.js?v=16';
-import { analizarPlantilla, crearGenerador, fechaLarga, aBase64, deBase64 } from './plantilla.js?v=16';
+import * as API from './servidor.js?v=17';
+import { libroXlsx, libroBytes, zipArchivos } from './xlsx.js?v=17';
+import { analizarPlantilla, crearGenerador, fechaLarga, aBase64, deBase64 } from './plantilla.js?v=17';
 window.API = API;
 (function () {
     'use strict';
@@ -346,7 +346,7 @@ window.API = API;
           campo('Folio CSTEXT', cstext), campo('Categorización', categ),
           campo('Transportista', transp), campo('Unidad asignada', unidad),
           campo('Guía o referencia', guia), campo('Fecha de carga', fprog),
-          campo('Monto ($)', monto), campo('¿Flete o maniobras?', concepto), campo('Tipo de movimiento', tipoMov),
+          campo('Monto ($)', monto), campo('¿Flete, maniobras o paquetería?', concepto), campo('Tipo de movimiento', tipoMov),
           campo((nuevo ? 'Fecha tentativa de recolección' : 'Fecha requerida') + (s.fecha_abierta === 'Sí' ? ' (abierta: asígnala aquí)' : ''), freq),
           fent ? campo('Fecha tentativa de entrega' + (s.fecha_abierta === 'Sí' ? ' (abierta: asígnala aquí)' : ''), fent) : null,
           frec ? campo((nuevo ? 'Recolección posterior' : 'Fecha de recolección') + (s.recoleccion_abierta === 'Sí' ? ' (abierta: asígnala aquí)' : ''), frec) : null,
@@ -432,7 +432,7 @@ window.API = API;
     /* Facturación ve los datos de la plantilla, sin poder cambiar la solicitud. */
     function facturaInfo(s) {
       return h('section', { class: 'tarjeta' }, h('h2', null, 'Plantilla de facturación'),
-        h('dl', { class: 'datos' }, [['Proveedor', s.transportista], ['Fecha de carga', U.dia(s.fecha_programada)], ['Monto', dinero(s.monto)], ['Flete o maniobras', s.concepto],
+        h('dl', { class: 'datos' }, [['Proveedor', s.transportista], ['Fecha de carga', U.dia(s.fecha_programada)], ['Monto', dinero(s.monto)], ['Concepto', s.concepto],
           ['Consecutivo', s.folio_cstext], ['Cliente', s.cliente_fact], ['Requiere factura de maniobra', s.maniobra || 'No'], ['CST', s.cst || 'CST'],
           ['Facturada', s.facturada ? U.dia(s.facturada) + (s.facturada_por ? ' · ' + s.facturada_por : '') : 'Pendiente']]
           .filter(function (d) { return d[1]; }).map(function (d) { return h('div', null, h('dt', null, d[0]), h('dd', null, d[1])); })));
@@ -474,10 +474,12 @@ window.API = API;
       return cacheGenerador.promesa;
     }
     var LUGAR = 'CALERA DE VICTOR ROSALES, ZACATECAS., A ';
+    /* Texto exacto de la lista TIPO DE MOVIMIENTO de la plantilla (sus fórmulas comparan con «MANIOBRAS»). */
+    var TIPO_FORMATO = { Flete: 'FLETE', Maniobras: 'MANIOBRAS', 'Paquetería': 'PAQUETERIA' };
     function valoresFormato(s) {
       var M = function (t) { return String(t || '').toUpperCase(); };
-      return { fecha: LUGAR + fechaLarga(String(s.creada || '').slice(0, 10)), origen: 'ORIGEN: ' + M(s.origen_fact), destino: 'DESTINO: ' + M(s.destino_fact),
-        folio: s.folio_cstext || s.folio, subtotal: Number(s.monto) || 0, transportista: s.transportista || '', tipo: M(s.concepto),
+      return { fecha: LUGAR + fechaLarga(s.fecha_programada || String(s.creada || '').slice(0, 10)), origen: 'ORIGEN: ' + M(s.origen_fact), destino: 'DESTINO: ' + M(s.destino_fact),
+        folio: s.folio_cstext || s.folio, subtotal: Number(s.monto) || 0, transportista: s.transportista || '', tipo: TIPO_FORMATO[s.concepto] || M(s.concepto),
         observaciones: 'MOVIMIENTO A ' + M(s.destino_fact) + (s.producto ? ' · ' + M(s.producto) : '') + (s.area ? ' · ' + M(s.area) : '') };
     }
     var limpioArchivo = function (t) { return String(t).replace(/[^\wÁÉÍÓÚÑáéíóúñ-]+/g, '_'); };
@@ -506,8 +508,8 @@ window.API = API;
         }).forEach(function (s) { var p = s.transportista || 'Sin proveedor asignado'; (mapa[p] = mapa[p] || []).push(s); });
         return Object.keys(mapa).sort().map(function (p) { return { proveedor: p, items: mapa[p].sort(function (a, b) { return fecha(a).localeCompare(fecha(b)); }) }; });
       }
-      /* Fletes y maniobras van en plantillas separadas; si salen varias, se descargan juntas en un ZIP con una carpeta por concepto. */
-      var CARPETA = { Flete: 'Fletes', Maniobras: 'Maniobras' };
+      /* Fletes, maniobras y paquetería van en plantillas separadas; si salen varias, se descargan juntas en un ZIP con una carpeta por concepto. */
+      var CARPETA = { Flete: 'Fletes', Maniobras: 'Maniobras', 'Paquetería': 'Paquetería' };
       var carpeta = function (s) { return CARPETA[s.concepto] || 'Sin definir'; };
       var sufijo = function () { return (filtrosFact.mes || cfg.hoy); };
       /* Con la plantilla de movimientos: un formato por movimiento, en «Fletes/PROVEEDOR/CSTEXT….xlsx» o «Maniobras/…».
@@ -592,7 +594,7 @@ window.API = API;
               h('p', { class: 'gris chico', style: 'margin:4px 0 0' }, g.items.length + (g.items.length === 1 ? ' entrega' : ' entregas') + ' · total ' + (dinero(total) || '$0.00'))),
               h('div', { class: 'acciones' }, bajar, marcar)),
             faltan ? h('div', { class: 'aviso aviso-alerta', style: 'margin:12px 0 0' }, h('p', null, faltan + (faltan === 1 ? ' entrega no tiene' : ' entregas no tienen') + ' monto o consecutivo. Pide al planeador que los capture antes de facturar.')) : null,
-            sinConcepto ? h('div', { class: 'aviso aviso-alerta', style: 'margin:12px 0 0' }, h('p', null, sinConcepto + (sinConcepto === 1 ? ' entrega no dice' : ' entregas no dicen') + ' si es flete o maniobras; se descarga en la carpeta «Sin definir».')) : null,
+            sinConcepto ? h('div', { class: 'aviso aviso-alerta', style: 'margin:12px 0 0' }, h('p', null, sinConcepto + (sinConcepto === 1 ? ' entrega no dice' : ' entregas no dicen') + ' si es flete, maniobras o paquetería; se descarga en la carpeta «Sin definir».')) : null,
             fueraDeTabla ? h('div', { class: 'aviso aviso-alerta', style: 'margin:12px 0 0' }, h('p', null, 'Este proveedor no está escrito igual que en la tabla de transportistas de la plantilla: en el formato, el IVA y las retenciones saldrán en $0. Corrígelo en la solicitud eligiéndolo de la lista.')) : null,
             h('div', { class: 'tabla-caja', style: 'margin-top:12px' }, h('table', { class: 'tabla-fact' },
               h('thead', null, h('tr', null, COLS_FACT.map(function (c) { return h('th', null, c[0]); }).concat([h('th', null, 'CONCEPTO'), h('th', null, 'ESTATUS'), h('th', null, 'FACTURADA'), h('th', null, 'FORMATO')]))),
@@ -600,7 +602,7 @@ window.API = API;
                 var tr = h('tr', { tabindex: '0' }, COLS_FACT.map(function (c) {
                   var v = c[3](s);
                   return h('td', { class: c[1] === 'moneda' ? 'celda-monto' : c[1] === 'izq' ? '' : 'centro' }, c[1] === 'moneda' ? dinero(v) : c[1] === 'fecha' ? diaCorto(v) : v);
-                }).concat([h('td', { class: 'centro' }, s.concepto ? h('span', { class: 'pill ' + (s.concepto === 'Flete' ? 'e-recibida' : 'e-en_revision') }, s.concepto) : h('span', { class: 'gris' }, 'Sin definir')),
+                }).concat([h('td', { class: 'centro' }, s.concepto ? h('span', { class: 'pill ' + ({ Flete: 'e-recibida', Maniobras: 'e-en_revision', 'Paquetería': 'e-programada' }[s.concepto] || 'e-informacion') }, s.concepto) : h('span', { class: 'gris' }, 'Sin definir')),
                   h('td', { class: 'centro' }, U.estado(cfg, s.estado)),
                   h('td', { class: 'centro', style: 'white-space:nowrap' }, s.facturada ? U.dia(s.facturada) : h('span', { class: 'gris' }, 'Pendiente'),
                   s.folio !== s.folio_cstext ? h('div', { class: 'sub' }, s.folio) : null),
@@ -647,9 +649,9 @@ window.API = API;
         var conMonto = vivas.filter(function (s) { return s.monto !== ''; }), mapa = {};
         conMonto.forEach(function (s) {
           var k = s.area || 'Sin departamento', m = Number(s.monto) || 0;
-          var d = mapa[k] = mapa[k] || { area: k, total: 0, n: 0, flete: 0, maniobras: 0 };
+          var d = mapa[k] = mapa[k] || { area: k, total: 0, n: 0, flete: 0, maniobras: 0, paqueteria: 0 };
           d.total += m; d.n += 1;
-          if (s.concepto === 'Flete') d.flete += m; else if (s.concepto === 'Maniobras') d.maniobras += m;
+          if (s.concepto === 'Flete') d.flete += m; else if (s.concepto === 'Maniobras') d.maniobras += m; else if (s.concepto === 'Paquetería') d.paqueteria += m;
         });
         return { filas: Object.keys(mapa).map(function (k) { return mapa[k]; }).sort(function (a, b) { return b.total - a.total || a.area.localeCompare(b.area); }),
           total: conMonto.reduce(function (t, s) { return t + (Number(s.monto) || 0); }, 0), n: conMonto.length, sinMonto: vivas.length - conMonto.length };
@@ -660,7 +662,7 @@ window.API = API;
         var tooltip = h('div', { class: 'tooltip', role: 'status', hidden: true });
         var grafica = h('div', { class: 'gbarras', role: 'list', 'aria-label': 'Gasto por departamento' }, r.filas.map(function (d) {
           var detalle = d.area + ': ' + dinero(d.total) + ' · ' + d.n + (d.n === 1 ? ' servicio' : ' servicios') +
-            (d.flete ? ' · fletes ' + dinero(d.flete) : '') + (d.maniobras ? ' · maniobras ' + dinero(d.maniobras) : '');
+            (d.flete ? ' · fletes ' + dinero(d.flete) : '') + (d.maniobras ? ' · maniobras ' + dinero(d.maniobras) : '') + (d.paqueteria ? ' · paquetería ' + dinero(d.paqueteria) : '');
           var fila = h('div', { class: 'gbar-fila', role: 'listitem', tabindex: '0', 'aria-label': detalle },
             h('span', { class: 'gbar-nombre' }, d.area),
             h('span', { class: 'gbar-pista' }, h('span', { class: 'gbar-marca', style: 'width:calc((100% - 170px) * ' + Math.max(0.01, max ? d.total / max : 0).toFixed(4) + ')' }),
@@ -682,22 +684,24 @@ window.API = API;
             tile('Promedio por servicio', r.n ? dinero(r.total / r.n) : '—'),
             tile('Departamento con más gasto', r.filas.length ? r.filas[0].area : '—', r.filas.length ? dinero(r.filas[0].total) : null)),
           r.filas.length ? h('section', { class: 'tarjeta' }, h('h2', null, 'Gasto por departamento'),
-            h('p', { class: 'gris chico' }, 'Suma de los montos que capturó el planeador. Pasa el mouse sobre una barra para ver fletes y maniobras.'),
+            h('p', { class: 'gris chico' }, 'Suma de los montos que capturó el planeador. Pasa el mouse sobre una barra para ver fletes, maniobras y paquetería.'),
             h('div', { class: 'grafica' }, grafica, tooltip))
             : h('div', { class: 'tarjeta', style: 'text-align:center' }, h('p', { class: 'gris', style: 'margin:0' }, 'Todavía no hay montos capturados con estos filtros.')),
           r.filas.length ? h('section', { class: 'tarjeta' }, h('h2', null, 'Detalle'),
             h('div', { class: 'tabla-caja' }, h('table', { class: 'tabla-gastos' },
-              h('thead', null, h('tr', null, ['Departamento', 'Servicios', 'Fletes', 'Maniobras', 'Total'].map(function (t, i) { return h('th', { class: i ? 'celda-monto' : null }, t); }))),
+              h('thead', null, h('tr', null, ['Departamento', 'Servicios', 'Fletes', 'Maniobras', 'Paquetería', 'Total'].map(function (t, i) { return h('th', { class: i ? 'celda-monto' : null }, t); }))),
               h('tbody', null, r.filas.map(function (d) {
                 return h('tr', { class: 'sin-clic' }, h('td', null, d.area), h('td', { class: 'celda-monto' }, String(d.n)), h('td', { class: 'celda-monto' }, d.flete ? dinero(d.flete) : '—'),
-                  h('td', { class: 'celda-monto' }, d.maniobras ? dinero(d.maniobras) : '—'), h('td', { class: 'celda-monto' }, h('b', null, dinero(d.total))));
+                  h('td', { class: 'celda-monto' }, d.maniobras ? dinero(d.maniobras) : '—'),
+                  h('td', { class: 'celda-monto' }, d.paqueteria ? dinero(d.paqueteria) : '—'), h('td', { class: 'celda-monto' }, h('b', null, dinero(d.total))));
               }).concat([h('tr', { class: 'sin-clic total' }, h('td', null, h('b', null, 'Total')), h('td', { class: 'celda-monto' }, String(r.n)),
                 h('td', { class: 'celda-monto' }, dinero(r.filas.reduce(function (t, d) { return t + d.flete; }, 0)) || '—'),
                 h('td', { class: 'celda-monto' }, dinero(r.filas.reduce(function (t, d) { return t + d.maniobras; }, 0)) || '—'),
+                h('td', { class: 'celda-monto' }, dinero(r.filas.reduce(function (t, d) { return t + d.paqueteria; }, 0)) || '—'),
                 h('td', { class: 'celda-monto' }, h('b', null, dinero(r.total))))]))))) : null);
       }
       var mes = h('input', { class: 'entrada', type: 'month', value: filtrosGastos.mes });
-      var concepto = lista([['', 'Fletes y maniobras']].concat(datos.conceptos.map(function (c) { return [c, c === 'Flete' ? 'Solo fletes' : 'Solo maniobras']; })), filtrosGastos.concepto);
+      var concepto = lista([['', 'Todos']].concat(datos.conceptos.map(function (c) { return [c, 'Solo ' + ({ Flete: 'fletes', Maniobras: 'maniobras' }[c] || c.toLowerCase())]; })), filtrosGastos.concepto);
       [[mes, 'mes'], [concepto, 'concepto']].forEach(function (x) { x[0].addEventListener('change', function () { filtrosGastos[x[1]] = x[0].value; pintar(); }); });
       mount(main,
         encabezado('Gastos', 'Cuánto ha gastado cada departamento que ha pedido servicios. Elige un mes o déjalo vacío para ver todo.',
@@ -744,7 +748,7 @@ window.API = API;
           .then(configuracion).catch(function (e) { input.disabled = false; input.value = ''; fallo(e); });
       });
       return h('section', { class: 'tarjeta' }, h('h2', null, 'Plantilla de movimientos (Excel)'),
-        h('p', { class: 'gris chico' }, 'Con ella, cada entrega se descarga en su propio formato (folio, origen, destino, transportista, flete o maniobras y subtotal); el IVA, las retenciones y el total los calcula el mismo Excel con la tabla de transportistas. La lista de transportistas del planeador se toma de esa tabla.'),
+        h('p', { class: 'gris chico' }, 'Con ella, cada entrega se descarga en su propio formato (folio, origen, destino, transportista, flete, maniobras o paquetería y subtotal); el IVA, las retenciones y el total los calcula el mismo Excel con la tabla de transportistas. La lista de transportistas del planeador se toma de esa tabla.'),
         estado, boton);
     }
 

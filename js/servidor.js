@@ -4,7 +4,7 @@
  * La seguridad real la imponen las reglas de Firestore (firestore.rules, bloque «Solicitudes de movimientos»).
  */
 import * as fb from './firebase-sdk.js?v=13';
-import * as C from './catalogos.js?v=15';
+import * as C from './catalogos.js?v=17';
 
 const CFG = window.CP_CONFIG || {};
 const COL = { config: 'sm_config', admins: 'sm_admins', inv: 'sm_invitaciones', sol: 'sm_solicitudes', correos: 'sm_correos', aut: 'sm_autorizaciones' };
@@ -693,7 +693,7 @@ export async function adminActualizar(_t, folio, cambios) {
     cambios.monto = m.toFixed(2);
   }
   if (cambios.tipo && !CAT.tipos.concat(C.TIPOS).some((x) => x[0] === cambios.tipo)) throw fallo('Tipo de movimiento no válido.');
-  if (cambios.concepto && !C.CONCEPTOS.includes(cambios.concepto)) throw fallo('Elige si es flete o maniobras.');
+  if (cambios.concepto && !C.CONCEPTOS.includes(cambios.concepto)) throw fallo('Elige si es flete, maniobras o paquetería.');
   if (cambios.folio_cstext) {
     cambios.folio_cstext = String(cambios.folio_cstext).trim().toUpperCase().replace(/^(\d+)$/, 'CSTEXT$1');
     const otro = (await getAll(donde(COL.sol, 'folio_cstext', cambios.folio_cstext))).find((x) => x.folio !== folio);

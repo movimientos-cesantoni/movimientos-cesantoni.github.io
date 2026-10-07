@@ -52,16 +52,16 @@ Pruebas: `tests/solicitudes-web/e2e.mjs` (repositorio privado) con el emulador d
 Portal y panel con menú lateral: cada opción dice en una línea para qué sirve. En celular el menú pasa arriba como barra.
 Panel: Solicitudes (5 contadores y filtro «Ver»), Facturación, Gastos (gasto por departamento con filtros de mes y concepto) y Configuración.
 
-## Fletes y maniobras
+## Fletes, maniobras y paquetería
 
-El planeador indica en cada solicitud si el cargo es Flete o Maniobras. En Facturación, las plantillas de cada proveedor se separan por
-concepto; si salen varias, se descargan en un ZIP con las carpetas «Fletes» y «Maniobras» («Descargar todas (ZIP)» junta a todos los proveedores).
+El planeador indica en cada solicitud si el cargo es Flete, Maniobras o Paquetería. En Facturación, las plantillas de cada proveedor se separan por
+concepto; si salen varias, se descargan en un ZIP con las carpetas «Fletes», «Maniobras» y «Paquetería» («Descargar todas (ZIP)» junta a todos los proveedores).
 
 ## Formato de movimiento (plantilla de Excel)
 
 El administrador sube `PLANTILLA_MOVIMIENTOS_EXT.xlsx` en Configuración › Plantilla de movimientos. Se guarda en Firestore
 (`sm_config/plantilla` y `sm_config/plantilla_archivo`), no en este sitio público, porque trae nombres de transportistas.
-Con la plantilla cargada, Facturación descarga un formato por movimiento (`Fletes/PROVEEDOR/CSTEXT00760.xlsx`), con fecha, origen,
+Con la plantilla cargada, Facturación descarga un formato por movimiento (fecha = fecha de carga, o la de la solicitud si aún no tiene) (`Fletes/PROVEEDOR/CSTEXT00760.xlsx`), con fecha, origen,
 destino, folio, subtotal, transportista, tipo y observaciones llenos; las fórmulas de IVA, retenciones y total se recalculan al abrir
 en Excel. La lista de transportistas del panel sale de la tabla «RAZON SOCIAL TRANSPORTISTA» de la plantilla. Sin plantilla se descarga
 la tabla por proveedor de antes.
