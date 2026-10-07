@@ -4,7 +4,7 @@
  * La seguridad real la imponen las reglas de Firestore (firestore.rules, bloque «Solicitudes de movimientos»).
  */
 import * as fb from './firebase-sdk.js?v=13';
-import * as C from './catalogos.js?v=5';
+import * as C from './catalogos.js?v=6';
 
 const CFG = window.CP_CONFIG || {};
 const COL = { config: 'sm_config', admins: 'sm_admins', inv: 'sm_invitaciones', sol: 'sm_solicitudes', correos: 'sm_correos' };
@@ -50,6 +50,18 @@ const nuevoId = () => azar(20, 'abcdefghijklmnopqrstuvwxyz0123456789');
 const nuevaClave = () => { const c = azar(8, 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'); return c.slice(0, 4) + '-' + c.slice(4); };
 const correoOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || ''));
 const tipoNombre = (k) => { const t = C.TIPOS.find((x) => x[0] === k); return t ? t[1] : k; };
+/* «Normal» es el nombre anterior de «Programado». */
+const prioridad = (p) => (p === 'Normal' ? 'Programado' : p || '');
+const esFecha = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+function sumarDias(ymd, n) { const d = new Date(ymd + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+/* Menos de 48 horas de anticipación: la fecha requerida cae antes de pasado mañana (se calcula por día, sin horas). */
+const fueraDeTiempo = (fecha) => esFecha(fecha) && fecha < sumarDias(hoy(), C.DIAS_ANTICIPACION);
+const conRecoleccion = (tipo) => tipo === 'entrega_recoleccion' || C.CON_RECOLECCION.includes(tipo);
+const productoNombre = (s) => (s.producto_tipo === 'Otro' ? s.producto_otro || 'Otro' : s.producto_tipo || '');
+const movimientoNombre = (s) => (s.tipo === 'otro' && s.tipo_otro ? 'Otro: ' + s.tipo_otro : tipoNombre(s.tipo));
+function articulosTexto(s) {
+  return [].concat(s.articulos || []).map((a) => a.cantidad + ' × ' + a.producto + (a.descripcion ? ' · ' + a.descripcion : '')).join('\n');
+}
 const base = () => new URL('./', location.href).href;
 const urlPortal = () => base();
 const urlPanel = (folio) => new URL('admin.html' + (folio ? '?folio=' + encodeURIComponent(folio) : ''), base()).href;
@@ -161,12 +173,50 @@ function validar(d) {
     else if (v.length > c[3]) errores[c[0]] = 'Máximo ' + c[3] + ' caracteres.';
   });
   if (d.correo && !correoOk(d.correo)) errores.correo = 'Escribe un correo válido.';
-  if (d.area && !C.AREAS.includes(d.area)) errores.area = 'Elige un área de la lista.';
+  if (d.producto_tipo && !C.PRODUCTOS.some((x) => x[0] === d.producto_tipo)) errores.producto_tipo = 'Elige un tipo de producto.';
+  if (d.producto_tipo === 'Otro' && !d.producto_otro) errores.producto_otro = 'Obligatorio.';
+  if (d.producto_tipo !== 'Otro') d.producto_otro = '';
   if (d.tipo && !C.TIPOS.some((t) => t[0] === d.tipo)) errores.tipo = 'Elige un tipo.';
-  if (d.prioridad && !['Normal', 'Urgente'].includes(d.prioridad)) errores.prioridad = 'Elige una prioridad.';
+  if (d.tipo === 'otro' && !d.tipo_otro) errores.tipo_otro = 'Obligatorio.';
+  if (d.tipo !== 'otro') d.tipo_otro = '';
+  if (d.prioridad && !C.PRIORIDADES.includes(d.prioridad)) errores.prioridad = 'Elige el tipo de solicitud.';
   if (d.forma_envio && !C.FORMAS_ENVIO.includes(d.forma_envio)) errores.forma_envio = 'Elige una forma de envío.';
   if (d.tipo === 'devolucion' && !C.MOTIVOS_DEVOLUCION.includes(d.dev_motivo)) errores.dev_motivo = 'Elige el motivo de la devolución.';
+  if (d.costo_absorbe && !C.COSTOS.includes(d.costo_absorbe)) errores.costo_absorbe = 'Elige quién absorbe el costo.';
+  if (['Otro departamento', 'Otro'].includes(d.costo_absorbe) && !d.costo_detalle) errores.costo_detalle = 'Obligatorio.';
+  if (!['Otro departamento', 'Otro'].includes(d.costo_absorbe)) d.costo_detalle = '';
+  d.horario = d.horario === 'Sí' ? 'Sí' : '';
+  /* Fechas: fecha requerida o «Fecha abierta». */
+  d.fecha_abierta = d.fecha_abierta === 'Sí' ? 'Sí' : '';
+  if (d.fecha_abierta) d.fecha_requerida = '';
+  else if (!esFecha(d.fecha_requerida)) errores.fecha_requerida = 'Elige la fecha o marca «Fecha abierta».';
+  else if (d.fecha_requerida < hoy()) errores.fecha_requerida = 'La fecha ya pasó.';
+  /* Recolección: obligatoria en «Entrega y posterior recolección»; opcional en entregas; no aplica en lo demás. */
+  if (d.tipo === 'entrega_recoleccion') d.recoleccion = 'Sí';
+  else if (!C.CON_RECOLECCION.includes(d.tipo)) d.recoleccion = '';
+  else if (!['Sí', 'No'].includes(d.recoleccion)) errores.recoleccion = 'Indica si el material regresa.';
+  d.recoleccion_abierta = d.recoleccion === 'Sí' && d.recoleccion_abierta === 'Sí' ? 'Sí' : '';
+  if (d.recoleccion !== 'Sí' || d.recoleccion_abierta) d.fecha_recoleccion = '';
+  else if (!esFecha(d.fecha_recoleccion)) errores.fecha_recoleccion = 'Elige la fecha de recolección o márcala como abierta.';
+  else if (d.fecha_requerida && d.fecha_recoleccion < d.fecha_requerida) errores.fecha_recoleccion = 'Debe ser igual o posterior a la fecha de entrega.';
+  /* Menos de 48 horas: urgente y con autorización del Gerente de Área. */
+  if (fueraDeTiempo(d.fecha_requerida)) {
+    d.prioridad = 'Urgente';
+    if (!d.aut_gerente) errores.aut_gerente = 'Obligatorio.';
+  } else d.aut_gerente = '';
   return errores;
+}
+/* Artículos: cada renglón con producto, cantidad y descripción. */
+function articulos(lista) {
+  lista = [].concat(lista || []).filter((x) => x && (String(x.producto || '').trim() || String(x.cantidad || '').trim() || String(x.descripcion || '').trim()));
+  if (!lista.length) throw fallo('Agrega al menos un artículo con su cantidad.');
+  if (lista.length > 30) throw fallo('Máximo 30 artículos por solicitud.');
+  return lista.map((x, i) => {
+    const n = Number(String(x.cantidad).replace(',', '.')), producto = String(x.producto || '').trim().slice(0, 80);
+    if (!producto) throw fallo('Artículo ' + (i + 1) + ': escribe qué producto es.');
+    if (!(n > 0 && n <= 99999)) throw fallo('Artículo ' + (i + 1) + ': escribe la cantidad (número mayor a cero).');
+    return { producto, cantidad: String(n), descripcion: String(x.descripcion || '').trim().slice(0, 300) };
+  });
 }
 function paquetes(lista) {
   lista = [].concat(lista || []).slice(0, 20);
@@ -190,6 +240,8 @@ export function configPortal() {
   return { areas: C.AREAS, tipos: C.TIPOS, estados: C.ESTADOS, abiertos: C.ABIERTOS, cancelables: C.CANCELABLES,
     formas_envio: C.FORMAS_ENVIO, paqueteria: C.PAQUETERIA, factor_volumetrico: C.FACTOR_VOLUMETRICO,
     motivos_devolucion: C.MOTIVOS_DEVOLUCION, checklist: C.CHECKLIST_DEVOLUCION, max_mb: MAX_MB, hoy: hoy(),
+    limite_programado: sumarDias(hoy(), C.DIAS_ANTICIPACION), productos: C.PRODUCTOS, reutilizables: C.REUTILIZABLES,
+    con_recoleccion: C.CON_RECOLECCION, prioridades: C.PRIORIDADES, costos: C.COSTOS, aut_estados: C.AUT_ESTADOS,
     sesion: u ? { correo: u.email } : null };
 }
 
@@ -208,8 +260,8 @@ export async function recuperarClave(correo) {
 }
 
 function resumen(s) {
-  return { folio: s.folio, creada: s.creada, actualizada: s.actualizada, estado: s.estado, prioridad: s.prioridad, tipo: s.tipo,
-    tipo_nombre: tipoNombre(s.tipo), origen: s.origen_nombre + ', ' + s.origen_ciudad, destino: s.destino_nombre + ', ' + s.destino_ciudad };
+  return { folio: s.folio, creada: s.creada, actualizada: s.actualizada, estado: s.estado, prioridad: prioridad(s.prioridad), tipo: s.tipo,
+    tipo_nombre: movimientoNombre(s), producto: productoNombre(s), fecha_requerida: s.fecha_requerida || '', fecha_abierta: s.fecha_abierta || '', origen: s.origen_nombre + ', ' + s.origen_ciudad, destino: s.destino_nombre + ', ' + s.destino_ciudad };
 }
 export async function misSolicitudes() {
   const u = auth.currentUser;
@@ -220,6 +272,7 @@ export async function misSolicitudes() {
 async function archivosDe(folio) {
   return (await getAll(col(COL.sol, folio, 'archivos'))).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)))
     .map((a) => ({ id: a.id, fecha: a.fecha, autor: a.autor, nombre: a.nombre, tamano: a.tamano, mime: a.mime, evidencia: !!a.evidencia,
+      cotizacion: a.clase === 'cotizacion',
       url: '#archivo:' + encodeURIComponent(folio) + ':' + a.id }));
 }
 const OCULTOS = ['uid', 'n', 'categorizacion', 'responsable', 'responsable_correo'];
@@ -228,7 +281,9 @@ async function vistaPublica(folio) {
   if (!s) throw fallo('No encontramos la solicitud ' + folio + '.');
   const out = {};
   Object.keys(s).forEach((k) => { if (!OCULTOS.includes(k)) out[k] = s[k]; });
-  out.tipo_nombre = tipoNombre(s.tipo);
+  out.tipo_nombre = movimientoNombre(s);
+  out.producto = productoNombre(s);
+  out.prioridad = prioridad(s.prioridad);
   out.seguimiento = (await getAll(fb.query(col(COL.sol, folio, 'seguimiento'), fb.where('visible', '==', true))))
     .sort((a, b) => String(a.fecha).localeCompare(String(b.fecha))).map((m) => ({ fecha: m.fecha, autor: m.autor, estado: m.estado, mensaje: m.mensaje }));
   out.archivos = await archivosDe(folio);
@@ -240,6 +295,16 @@ export async function consultarSolicitud(folio) {
   catch (e) { if (e.code === 'permission-denied') throw fallo('Esta solicitud no está registrada con tu correo.'); throw e; }
 }
 
+const diaTexto = (ymd) => (esFecha(ymd) ? ymd.slice(8, 10) + '/' + ymd.slice(5, 7) + '/' + ymd.slice(0, 4) : '');
+function fechasTexto(s) {
+  const entrega = ['envio', 'entrega_recoleccion', 'mercadotecnia'].includes(s.tipo) ? 'Fecha de entrega' : 'Fecha requerida';
+  const out = [[entrega, s.fecha_abierta === 'Sí' ? 'Fecha abierta' : diaTexto(s.fecha_requerida)]];
+  if (s.recoleccion === 'Sí') out.push(['Fecha de recolección', s.recoleccion_abierta === 'Sí' ? 'Fecha abierta' : diaTexto(s.fecha_recoleccion)]);
+  else if (s.recoleccion === 'No') out.push(['Recolección', 'No requiere recolección']);
+  return out.filter((x) => x[1]);
+}
+const costoTexto = (s) => (s.costo_absorbe ? s.costo_absorbe + (s.costo_detalle ? ': ' + s.costo_detalle : '') : '');
+
 /* Crea la solicitud. Sin sesión, crea el acceso de quien solicita (correo + clave) como en proveedores. */
 export async function crearSolicitud(datos, cuenta) {
   datos = datos || {};
@@ -249,11 +314,13 @@ export async function crearSolicitud(datos, cuenta) {
   d.dev_checklist = d.tipo === 'devolucion' ? marcados.join('\n') : '';
   if (d.tipo !== 'devolucion') d.dev_motivo = '';
   if (auth.currentUser) d.correo = auth.currentUser.email;
+  const arts = articulos(datos.articulos);
   const paq = paquetes(String(d.forma_envio || '').trim() === C.PAQUETERIA ? datos.paquetes : []);
   if (String(d.forma_envio || '').trim() === C.PAQUETERIA && !paq.total) throw fallo('Agrega al menos un paquete con cantidad, medidas y peso.');
   const errores = validar(d);
   if (Object.keys(errores).length) throw fallo('Revisa los campos marcados: ' + Object.keys(errores).map((k) => C.CAMPOS.find((c) => c[0] === k)[1]).join(', ') + '.');
   d.correo = d.correo.toLowerCase();
+  const fuera = fueraDeTiempo(d.fecha_requerida);
 
   let claveNueva = '';
   if (!auth.currentUser) {
@@ -277,21 +344,26 @@ export async function crearSolicitud(datos, cuenta) {
     if (cs.exists()) tx.update(cref, { n, ultimo: folio }); else tx.set(cref, { n, ultimo: folio });
     tx.set(ref(COL.sol, folio), Object.assign({}, d, { folio, n, uid, estado: 'recibida', creada: t, actualizada: t, cerrada: '',
       dev_cumple: d.tipo === 'devolucion' ? (marcados.length === C.CHECKLIST_DEVOLUCION.length ? 'Sí' : 'No') : '',
-      paquetes: paq.texto, paq_total: paq.total ? String(paq.total) : '', paq_peso_kg: paq.total ? String(paq.peso) : '', paq_vol_kg: paq.total ? String(paq.vol) : '' }));
+      paquetes: paq.texto, paq_total: paq.total ? String(paq.total) : '', paq_peso_kg: paq.total ? String(paq.peso) : '', paq_vol_kg: paq.total ? String(paq.vol) : '',
+      articulos: arts, fuera_tiempo: fuera ? 'Sí' : '', aut_estado: fuera ? C.AUT_PENDIENTE : '' }));
     tx.set(ref(COL.sol, folio, 'seguimiento', nuevoId()), { fecha: t, autor: d.solicitante, autor_tipo: 'solicitante', visible: true, estado: 'recibida', mensaje: 'Solicitud creada.' });
   });
   const sol = await getOne(ref(COL.sol, folio));
-  await enviarCorreo({ plantilla: 'solicitante', folio, para: d.correo, asunto: 'Solicitud ' + folio + ' recibida · ' + tipoNombre(d.tipo),
-    titulo: 'Recibimos tu solicitud', parrafos: ['Hola ' + d.solicitante + ', Logística ya tiene tu solicitud de ' + tipoNombre(d.tipo).toLowerCase() + '. Te avisaremos por este medio cada avance.'],
+  const fechas = fechasTexto(sol);
+  await enviarCorreo({ plantilla: 'solicitante', folio, para: d.correo, asunto: 'Solicitud ' + folio + ' recibida · ' + movimientoNombre(sol),
+    titulo: 'Recibimos tu solicitud', parrafos: ['Hola ' + d.solicitante + ', Logística ya tiene tu solicitud de ' + movimientoNombre(sol).toLowerCase() + '. Te avisaremos por este medio cada avance.']
+      .concat(fuera ? ['Importante: tu solicitud se hizo con menos de 48 horas de anticipación. Podrán aplicarse sobrecostos y se requiere la autorización del Gerente de Área (' + sol.aut_gerente + ').'] : []),
     datos: [['Folio', folio]].concat(claveNueva ? [['Tu correo de acceso', d.correo], ['Tu clave', claveNueva]] : [])
-      .concat([['Ruta', d.origen_ciudad + ' → ' + d.destino_ciudad], ['Forma de envío', d.forma_envio]]),
+      .concat([['Producto', productoNombre(sol)], ['Movimiento', movimientoNombre(sol)]], fechas,
+        [['Ruta', d.origen_ciudad + ' → ' + d.destino_ciudad], ['Forma de envío', d.forma_envio]]),
     boton: { texto: 'Ver mis solicitudes', url: urlPortal() },
     nota: claveNueva ? 'Con tu correo y esta clave consultas todas tus solicitudes. Si la pierdes, en el portal elige «Olvidé mi clave».' : '' });
   await enviarCorreo({ plantilla: 'interno', folio, para: await avisos(), etiqueta: sol.prioridad === 'Urgente' ? 'URGENTE' : 'NUEVA SOLICITUD',
-    asunto: (sol.prioridad === 'Urgente' ? 'URGENTE · ' : '') + 'Nueva solicitud ' + folio + ' · ' + tipoNombre(sol.tipo),
-    titulo: tipoNombre(sol.tipo) + ' · ' + sol.area, parrafos: [sol.solicitante + ' registró una solicitud.', 'Motivo: ' + sol.motivo],
-    datos: [['Prioridad', sol.prioridad], ['Forma de envío', sol.forma_envio],
-      ['Ruta', sol.origen_nombre + ', ' + sol.origen_ciudad + ' → ' + sol.destino_nombre + ', ' + sol.destino_ciudad]]
+    asunto: (sol.prioridad === 'Urgente' ? 'URGENTE · ' : '') + 'Nueva solicitud ' + folio + ' · ' + productoNombre(sol) + ' · ' + movimientoNombre(sol),
+    titulo: productoNombre(sol) + ' · ' + movimientoNombre(sol), parrafos: [sol.solicitante + ' (' + sol.area + ') registró una solicitud.', 'Descripción: ' + sol.motivo]
+      .concat(fuera ? ['Menos de 48 horas de anticipación: puede aplicar sobrecosto. Autorización del Gerente de Área (' + sol.aut_gerente + ') pendiente.'] : []),
+    datos: [['Tipo de solicitud', sol.prioridad], ['Artículos', articulosTexto(sol)], ['Costo', costoTexto(sol)]].concat(fechas, [['Forma de envío', sol.forma_envio]],
+      [['Ruta', sol.origen_nombre + ', ' + sol.origen_ciudad + ' → ' + sol.destino_nombre + ', ' + sol.destino_ciudad]])
       .concat(sol.paq_total ? [['Paquetes', sol.paq_total + ' · ' + sol.paq_peso_kg + ' kg (volumétrico ' + sol.paq_vol_kg + ' kg)\n' + sol.paquetes]] : [])
       .concat(sol.horario === 'Sí' ? [['Cita', 'Se requiere cita para entregar o recoger']] : [])
       .concat(sol.tipo === 'devolucion' ? [['Devolución', sol.dev_motivo + ' · ' + (sol.dev_cumple === 'Sí' ? 'cumple todos los puntos' : 'NO cumple todos los puntos: revisar')]] : []),
@@ -307,7 +379,7 @@ async function guardarArchivo(folio, archivo, autor) {
   for (let i = 0; i < partes; i++) await fb.setDoc(ref(COL.sol, folio, 'archivos', id, 'partes', String(i).padStart(3, '0')), { d: b64.slice(i * CHUNK, (i + 1) * CHUNK) });
   const nombre = String(archivo.nombre).replace(/[^\wÁÉÍÓÚÜÑáéíóúüñ .()-]/g, '_').slice(0, 140);
   await fb.setDoc(ref(COL.sol, folio, 'archivos', id), { fecha: ahora(), autor, nombre, mime: archivo.mime || 'application/octet-stream',
-    tamano: Number(archivo.tamano) || 0, partes, evidencia: archivo.clase === 'evidencia' });
+    tamano: Number(archivo.tamano) || 0, partes, evidencia: archivo.clase === 'evidencia', clase: ['evidencia', 'cotizacion'].includes(archivo.clase) ? archivo.clase : '' });
 }
 export async function subirArchivo(folio, archivo) {
   const s = await consultarSolicitud(folio);
@@ -443,13 +515,17 @@ export async function adminCambiarPassword(_t, actual, nueva) {
 export async function adminDatos() {
   const a = await sesionPanel(true);
   const lista = (await getAll(col(COL.sol))).map((s) => ({ folio: s.folio, creada: s.creada, actualizada: s.actualizada, estado: s.estado,
-    prioridad: s.prioridad, tipo: s.tipo, area: s.area, solicitante: s.solicitante, correo: s.correo, cliente: s.cliente, referencia: s.referencia, cita: s.horario || '',
+    prioridad: prioridad(s.prioridad), tipo: s.tipo, tipo_nombre: movimientoNombre(s), producto: productoNombre(s), articulos: articulosTexto(s),
+    costo: costoTexto(s), fecha_requerida: s.fecha_requerida || '', fecha_abierta: s.fecha_abierta || '', recoleccion: s.recoleccion || '',
+    fecha_recoleccion: s.fecha_recoleccion || '', recoleccion_abierta: s.recoleccion_abierta || '', fuera_tiempo: s.fuera_tiempo || '',
+    aut_estado: s.aut_estado || '', aut_gerente: s.aut_gerente || '', area: s.area, solicitante: s.solicitante, correo: s.correo, cliente: s.cliente, referencia: s.referencia, cita: s.horario || '',
     origen: s.origen_nombre + ', ' + s.origen_ciudad, destino: s.destino_nombre + ', ' + s.destino_ciudad, dev_motivo: s.dev_motivo || '',
     dev_cumple: s.dev_cumple || '', forma_envio: s.forma_envio || '', paq_total: s.paq_total || '', paq_peso_kg: s.paq_peso_kg || '',
     folio_cstext: s.folio_cstext || '', categorizacion: s.categorizacion || '', responsable: s.responsable || '', transportista: s.transportista || '',
     unidad_asignada: s.unidad_asignada || '', guia: s.guia || '', fecha_programada: s.fecha_programada || '' }))
     .sort((x, y) => String(y.creada).localeCompare(String(x.creada)));
-  return { yo: publico(a), solicitudes: lista, usuarios: await equipo(), categorias: C.CATEGORIAS, transportistas: C.TRANSPORTISTAS, tipos_unidad: C.TIPOS_UNIDAD };
+  return { yo: publico(a), solicitudes: lista, usuarios: await equipo(), categorias: C.CATEGORIAS, transportistas: C.TRANSPORTISTAS, tipos_unidad: C.TIPOS_UNIDAD,
+    aut_estados: C.AUT_ESTADOS };
 }
 
 export async function adminDetalle(_t, folio) {
@@ -458,7 +534,8 @@ export async function adminDetalle(_t, folio) {
   const s = await getOne(ref(COL.sol, folio));
   if (!s) throw fallo('No existe la solicitud ' + folio + '.');
   const interno = await getOne(ref(COL.sol, folio, 'interno', 'datos')).catch(() => null);
-  const out = Object.assign({}, s, { notas_internas: (interno && interno.notas_internas) || '', tipo_nombre: tipoNombre(s.tipo) });
+  const out = Object.assign({}, s, { notas_internas: (interno && interno.notas_internas) || '', tipo_nombre: movimientoNombre(s),
+    producto: productoNombre(s), prioridad: prioridad(s.prioridad) });
   out.seguimiento = (await getAll(col(COL.sol, folio, 'seguimiento'))).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)))
     .map((m) => ({ fecha: m.fecha, autor: m.autor, visible: m.visible !== false, estado: m.estado, mensaje: m.mensaje }));
   out.archivos = await archivosDe(folio);
@@ -479,7 +556,15 @@ export async function adminActualizar(_t, folio, cambios) {
   if ((cambios.estado === 'rechazada' || cambios.estado === 'cancelada') && cambios.estado !== antes && !mensaje) throw fallo('Escribe el motivo.');
   const team = await equipo();
   if (cambios.responsable && !team.some((x) => x.usuario === cambios.responsable)) throw fallo('Responsable no válido.');
-  if (cambios.fecha_programada && !/^\d{4}-\d{2}-\d{2}$/.test(cambios.fecha_programada)) throw fallo('Fecha programada no válida.');
+  ['fecha_programada', 'fecha_requerida', 'fecha_recoleccion', 'aut_fecha'].forEach((k) => {
+    if (cambios[k] && !esFecha(cambios[k])) throw fallo('Fecha no válida.');
+  });
+  if (cambios.aut_estado && !C.AUT_ESTADOS.includes(cambios.aut_estado)) throw fallo('Estatus de autorización no válido.');
+  /* Sin autorización del Gerente de Área no avanza a programada, en tránsito ni completada. */
+  const aut = cambios.aut_estado !== undefined ? cambios.aut_estado : s.aut_estado;
+  if (aut && aut !== 'Autorizado' && ['programada', 'en_transito', 'completada'].includes(cambios.estado) && cambios.estado !== s.estado) {
+    throw fallo('Esta solicitud requiere la autorización del Gerente de Área. Regístrala como «Autorizado» antes de programarla.');
+  }
   if (cambios.categorizacion && !C.CATEGORIAS.includes(cambios.categorizacion)) throw fallo('Categorización no válida.');
   if (cambios.folio_cstext) {
     cambios.folio_cstext = String(cambios.folio_cstext).trim().toUpperCase().replace(/^(\d+)$/, 'CSTEXT$1');
@@ -487,9 +572,17 @@ export async function adminActualizar(_t, folio, cambios) {
     if (otro) throw fallo('El folio ' + cambios.folio_cstext + ' ya está en la solicitud ' + otro.folio + '.');
   }
   const t = ahora(), patch = { actualizada: t };
-  ['folio_cstext', 'categorizacion', 'transportista', 'unidad_asignada', 'guia', 'fecha_programada'].forEach((k) => {
-    if (cambios[k] !== undefined) patch[k] = String(cambios[k]).trim().slice(0, 160);
+  ['folio_cstext', 'categorizacion', 'transportista', 'unidad_asignada', 'guia', 'fecha_programada', 'aut_gerente', 'aut_comentario'].forEach((k) => {
+    if (cambios[k] !== undefined) patch[k] = String(cambios[k]).trim().slice(0, k === 'aut_comentario' ? 1000 : 160);
   });
+  /* Asignar la fecha a una solicitud con «Fecha abierta» sin crear una nueva. */
+  if (cambios.fecha_requerida) { patch.fecha_requerida = cambios.fecha_requerida; patch.fecha_abierta = ''; }
+  if (cambios.fecha_recoleccion && s.recoleccion === 'Sí') { patch.fecha_recoleccion = cambios.fecha_recoleccion; patch.recoleccion_abierta = ''; }
+  if (cambios.aut_estado !== undefined && s.aut_estado && cambios.aut_estado !== s.aut_estado) {
+    patch.aut_estado = cambios.aut_estado;
+    patch.aut_fecha = cambios.aut_estado === C.AUT_PENDIENTE ? '' : (cambios.aut_fecha || hoy());
+    patch.aut_registro = a.nombre;
+  } else if (cambios.aut_fecha && s.aut_estado) patch.aut_fecha = cambios.aut_fecha;
   if (cambios.responsable !== undefined) {
     const r = team.find((x) => x.usuario === cambios.responsable);
     patch.responsable = r ? r.usuario : ''; patch.responsable_nombre = r ? r.nombre : ''; patch.responsable_correo = r ? r.correo : '';
@@ -500,23 +593,30 @@ export async function adminActualizar(_t, folio, cambios) {
   const b = fb.writeBatch(db);
   b.update(ref(COL.sol, folio), patch);
   if (cambios.notas_internas !== undefined) b.set(ref(COL.sol, folio, 'interno', 'datos'), { notas_internas: String(cambios.notas_internas).slice(0, 2000), actualizado: t });
+  const autCambio = patch.aut_estado !== undefined;
+  const autTexto = autCambio ? 'Autorización del Gerente de Área: ' + patch.aut_estado + '.' : '';
   if (estado !== antes || mensaje) {
     b.set(ref(COL.sol, folio, 'seguimiento', nuevoId()), { fecha: t, autor: a.nombre + ' (Logística)', autor_tipo: 'logistica',
       visible: cambios.visible !== false, estado, mensaje: mensaje || ('Estado: ' + C.ESTADOS[estado] + '.') });
   }
+  if (autCambio) {
+    b.set(ref(COL.sol, folio, 'seguimiento', nuevoId()), { fecha: t, autor: a.nombre + ' (Logística)', autor_tipo: 'logistica',
+      visible: true, estado, mensaje: autTexto + (patch.aut_comentario ? '\n' + patch.aut_comentario : '') });
+  }
   await b.commit();
   const n = Object.assign({}, s, patch);
-  if ((estado !== antes || mensaje) && cambios.visible !== false && cambios.notificar !== false) {
-    const datos = [['Estado', C.ESTADOS[estado]]];
+  const paraSolicitante = cambios.visible !== false;
+  if ((((estado !== antes || mensaje) && paraSolicitante) || autCambio) && cambios.notificar !== false) {
+    const datos = [['Estado', C.ESTADOS[estado]]].concat(autCambio ? [['Autorización del Gerente', patch.aut_estado]] : []);
     if (n.fecha_programada && ['programada', 'en_transito'].includes(estado)) {
-      datos.push(['Fecha programada', n.fecha_programada]);
+      datos.push(['Fecha programada', diaTexto(n.fecha_programada)]);
       if (n.transportista) datos.push(['Transportista', n.transportista]);
       if (n.guia) datos.push(['Guía', n.guia]);
     }
     await enviarCorreo({ plantilla: 'solicitante', folio, para: s.correo, asunto: folio + ' · ' + C.ESTADOS[estado],
       titulo: 'Tu solicitud está: ' + C.ESTADOS[estado],
-      parrafos: ['Hola ' + s.solicitante + ', hay un avance en tu solicitud de ' + tipoNombre(s.tipo).toLowerCase() + '.']
-        .concat(mensaje ? ['Mensaje de Logística: ' + mensaje] : [])
+      parrafos: ['Hola ' + s.solicitante + ', hay un avance en tu solicitud de ' + movimientoNombre(s).toLowerCase() + '.']
+        .concat(mensaje && paraSolicitante ? ['Mensaje de Logística: ' + mensaje] : [])
         .concat(estado === 'informacion' ? ['Responde desde el portal para continuar.'] : []),
       datos, boton: { texto: 'Ver mi solicitud', url: urlPortal() } });
   }

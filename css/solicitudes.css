@@ -179,3 +179,22 @@ td .sub { font-size: 12px; color: var(--gris); }
 .pasos-acciones .espacio { flex: 1; }
 .paso .opcion span { padding: 14px 14px; }
 .paso .opcion span b { font-size: 15px; }
+
+/* artículos (varios productos en una misma solicitud) */
+.articulos { display: grid; gap: 10px; }
+.art-fila { display: grid; grid-template-columns: 110px minmax(0, 1fr) minmax(0, 1.6fr) auto; gap: 10px; align-items: end;
+  border: 1px solid var(--linea); border-radius: 8px; padding: 10px 12px; background: var(--fondo); }
+.art-campo > span { display: block; font-size: 12px; font-weight: 600; margin-bottom: 3px; }
+.art-fila > .liga { align-self: center; justify-self: end; }
+@media (max-width: 760px) { .art-fila { grid-template-columns: 1fr 2fr; } .art-fila .art-campo:nth-child(3) { grid-column: 1 / -1; } .art-fila > .liga { grid-column: 1 / -1; justify-self: start; } }
+
+/* opciones que no aplican (por ejemplo, «Programado» con menos de 48 horas) */
+.opcion.deshabilitada span { opacity: .45; cursor: not-allowed; background: var(--fondo); }
+.paso .tarjeta + .tarjeta { margin-top: 0; }
+.paso h3 { padding-top: 6px; border-top: 1px solid var(--linea); }
+.paso h3:first-child, .paso .rejilla > h3:first-child { border-top: 0; padding-top: 0; }
+.resumen .datos { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+/* panel: autorización del Gerente de Área */
+.grupo-aut { border: 1px solid #F0D78E; background: var(--alerta-bg); border-radius: 8px; padding: 12px 14px 14px; margin: 14px 0 0; min-width: 0; }
+.grupo-aut legend { font-family: var(--titulos); font-weight: 600; font-size: 14px; padding: 0 6px; }

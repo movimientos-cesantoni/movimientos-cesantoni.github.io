@@ -1,5 +1,5 @@
 /* Panel de Logística (Liga 2): base de solicitudes. Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=5';
+import * as API from './servidor.js?v=6';
 window.API = API;
 (function () {
     'use strict';
@@ -30,7 +30,6 @@ window.API = API;
       el.value = valor || '';
       return el;
     }
-    function tipoNombre(k) { var t = cfg.tipos.filter(function (x) { return x[0] === k; })[0]; return t ? t[1] : k; }
     function nombreDe(usuario) { var u = (datos ? datos.usuarios : []).filter(function (x) { return x.usuario === usuario; })[0]; return u ? u.nombre : usuario; }
     function devolucionPendiente(s) { return s.tipo === 'devolucion' && s.dev_cumple === 'No' && cfg.abiertos.indexOf(s.estado) >= 0; }
 
@@ -136,6 +135,8 @@ window.API = API;
       ['abiertas', 'Abiertas', function (s) { return cfg.abiertos.indexOf(s.estado) >= 0; }],
       ['nuevas', 'Nuevas sin revisar', function (s) { return s.estado === 'recibida'; }],
       ['urgentes', 'Urgentes abiertas', function (s) { return s.prioridad === 'Urgente' && cfg.abiertos.indexOf(s.estado) >= 0; }],
+      ['autorizacion', 'Pendientes de autorización', function (s) { return s.aut_estado === 'Pendiente de autorización' && cfg.abiertos.indexOf(s.estado) >= 0; }],
+      ['fecha_abierta', 'Con fecha abierta', function (s) { return s.fecha_abierta === 'Sí' && cfg.abiertos.indexOf(s.estado) >= 0; }],
       ['devoluciones', 'Devoluciones que no cumplen', devolucionPendiente],
       ['sin_cstext', 'Sin folio CSTEXT', function (s) { return !s.folio_cstext && ['programada', 'en_transito', 'completada'].indexOf(s.estado) >= 0; }],
       ['mias', 'Asignadas a mí', function (s) { return s.responsable === yo.usuario && cfg.abiertos.indexOf(s.estado) >= 0; }],
@@ -161,7 +162,7 @@ window.API = API;
         return datos.solicitudes.filter(function (s) {
           return vista[2](s) && (!filtros.tipo || s.tipo === filtros.tipo) && (!filtros.area || s.area === filtros.area) &&
             (!filtros.prioridad || s.prioridad === filtros.prioridad) && (!filtros.responsable || s.responsable === filtros.responsable) &&
-            (!q || [s.folio, s.folio_cstext, s.solicitante, s.cliente, s.referencia, s.origen, s.destino, s.transportista, s.guia].join(' ').toLowerCase().indexOf(q) >= 0);
+            (!q || [s.folio, s.folio_cstext, s.solicitante, s.area, s.producto, s.articulos, s.cliente, s.referencia, s.origen, s.destino, s.transportista, s.guia].join(' ').toLowerCase().indexOf(q) >= 0);
         });
       }
       function pintar() {
@@ -169,20 +170,25 @@ window.API = API;
         if (!items.length) { mount(tabla, h('div', { class: 'tarjeta', style: 'text-align:center' }, h('p', { class: 'gris', style: 'margin:0' }, 'No hay solicitudes con estos filtros.'))); return; }
         mount(tabla, h('p', { class: 'gris chico' }, items.length + (items.length === 1 ? ' solicitud' : ' solicitudes')),
           h('div', { class: 'tabla-caja' }, h('table', null,
-            h('thead', null, h('tr', null, ['Folio', 'Estado', 'Tipo', 'Solicita', 'Ruta', 'Programada', 'Responsable', 'Transportista'].map(function (t) { return h('th', null, t); }))),
+            h('thead', null, h('tr', null, ['Folio', 'Estado', 'Producto y movimiento', 'Solicita', 'Ruta', 'Fechas', 'Responsable', 'Transportista'].map(function (t) { return h('th', null, t); }))),
             h('tbody', null, items.map(function (s) {
               var tr = h('tr', { tabindex: '0' },
                 h('td', { style: 'white-space:nowrap' }, h('b', null, s.folio), s.folio_cstext ? h('div', { class: 'sub' }, s.folio_cstext) : null,
                   h('div', { class: 'sub' }, U.dia(s.creada))),
-                h('td', null, U.estado(cfg, s.estado), s.prioridad === 'Urgente' ? h('div', { style: 'margin-top:4px' }, h('span', { class: 'pill urgente' }, 'Urgente')) : null),
-                h('td', null, tipoNombre(s.tipo), s.tipo === 'devolucion' ? h('div', { style: 'margin-top:4px' },
+                h('td', null, U.estado(cfg, s.estado), s.prioridad === 'Urgente' ? h('div', { style: 'margin-top:4px' }, h('span', { class: 'pill urgente' }, 'Urgente')) : null,
+                  s.aut_estado ? h('div', { style: 'margin-top:4px' }, h('span', { class: 'pill ' + (s.aut_estado === 'Autorizado' ? 'e-completada' : s.aut_estado === 'Rechazado' ? 'e-rechazada' : 'e-en_revision') },
+                    s.aut_estado === 'Pendiente de autorización' ? 'Pendiente de autorización' : 'Gerente: ' + s.aut_estado)) : null),
+                h('td', null, h('b', null, s.producto || '—'), h('div', { class: 'sub' }, s.tipo_nombre), s.tipo === 'devolucion' ? h('div', { style: 'margin-top:4px' },
                   h('span', { class: 'pill ' + (s.dev_cumple === 'Sí' ? 'e-completada' : 'e-rechazada') }, s.dev_cumple === 'Sí' ? 'Cumple' : 'No cumple')) : null,
                   s.forma_envio ? h('div', { class: 'sub' }, s.forma_envio + (s.paq_total ? ' · ' + s.paq_total + ' paq. · ' + s.paq_peso_kg + ' kg' : '')) : null,
                   s.referencia ? h('div', { class: 'sub' }, 'Folio ' + s.referencia) : null,
                   s.cita === 'Sí' ? h('div', { style: 'margin-top:4px' }, h('span', { class: 'pill e-informacion' }, 'Requiere cita')) : null),
                 h('td', null, s.solicitante, h('div', { class: 'sub' }, s.area)),
                 h('td', null, s.origen, h('div', { class: 'sub' }, '→ ' + s.destino)),
-                h('td', { style: 'white-space:nowrap' }, s.fecha_programada ? U.dia(s.fecha_programada) : h('span', { class: 'gris' }, '—'),
+                h('td', { style: 'white-space:nowrap' },
+                  s.fecha_abierta === 'Sí' ? h('span', { class: 'pill e-informacion' }, 'Fecha abierta') : (U.dia(s.fecha_requerida) || h('span', { class: 'gris' }, '—')),
+                  s.recoleccion === 'Sí' ? h('div', { class: 'sub' }, 'Recolección: ' + (s.recoleccion_abierta === 'Sí' ? 'abierta' : U.dia(s.fecha_recoleccion))) : null,
+                  s.fecha_programada ? h('div', { class: 'sub' }, 'Programada: ' + U.dia(s.fecha_programada)) : null,
                   s.categorizacion ? h('div', { class: 'sub' }, s.categorizacion) : null),
                 h('td', null, s.responsable ? nombreDe(s.responsable) : h('span', { class: 'gris' }, 'Sin asignar')),
                 h('td', null, s.transportista || h('span', { class: 'gris' }, '—'), s.guia ? h('div', { class: 'sub' }, s.guia) : null));
@@ -202,8 +208,8 @@ window.API = API;
         h('div', { class: 'filtros' },
           h('div', { class: 'busqueda' }, campo('Buscar', q)),
           campo('Tipo', filtro('tipo', lista([['', 'Todos']].concat(cfg.tipos.map(function (t) { return [t[0], t[1]]; })), filtros.tipo))),
-          campo('Área', filtro('area', lista([['', 'Todas']].concat(cfg.areas.map(function (a) { return [a, a]; })), filtros.area))),
-          campo('Prioridad', filtro('prioridad', lista([['', 'Todas'], ['Normal', 'Normal'], ['Urgente', 'Urgente']], filtros.prioridad))),
+          campo('Departamento', filtro('area', lista([['', 'Todos']].concat(departamentos().map(function (a) { return [a, a]; })), filtros.area))),
+          campo('Tipo de solicitud', filtro('prioridad', lista([['', 'Todas'], ['Programado', 'Programado'], ['Urgente', 'Urgente']], filtros.prioridad))),
           campo('Responsable', filtro('responsable', lista([['', 'Todos']].concat(datos.usuarios.map(function (u) { return [u.usuario, u.nombre]; })), filtros.responsable))),
           h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { filtros = { vista: 'todas', q: '', tipo: '', area: '', prioridad: '', responsable: '' }; tablero(); } }, 'Limpiar')),
         tabla);
@@ -211,8 +217,18 @@ window.API = API;
       pintar();
     }
 
+    /* Departamentos del catálogo más los que se hayan escrito a mano. */
+    function departamentos() {
+      var vistos = cfg.areas.slice();
+      datos.solicitudes.forEach(function (s) { if (s.area && vistos.indexOf(s.area) < 0) vistos.push(s.area); });
+      return vistos;
+    }
+
     function exportar(items) {
-      var cols = [['folio', 'Folio'], ['creada', 'Creada'], ['estado', 'Estado'], ['prioridad', 'Prioridad'], ['tipo', 'Tipo'], ['area', 'Área'],
+      var cols = [['folio', 'Folio'], ['creada', 'Creada'], ['estado', 'Estado'], ['prioridad', 'Tipo de solicitud'], ['producto', 'Producto'], ['tipo', 'Movimiento'],
+        ['articulos', 'Artículos'], ['area', 'Departamento solicitante'], ['costo', 'Quién absorbe el costo'],
+        ['fecha_requerida', 'Fecha requerida'], ['fecha_abierta', 'Fecha abierta'], ['recoleccion', 'Requiere recolección'], ['fecha_recoleccion', 'Fecha de recolección'],
+        ['fuera_tiempo', 'Menos de 48 horas'], ['aut_estado', 'Autorización gerente'], ['aut_gerente', 'Gerente que autoriza'],
         ['solicitante', 'Solicitante'], ['correo', 'Correo'], ['referencia', 'Folio'], ['cliente', 'Factura'], ['cita', 'Requiere cita'],
         ['origen', 'Origen'], ['destino', 'Destino'], ['forma_envio', 'Forma de envío'], ['paq_total', 'Paquetes'],
         ['paq_peso_kg', 'Peso paquetes (kg)'], ['dev_motivo', 'Motivo devolución'], ['dev_cumple', 'Devolución cumple'],
@@ -221,7 +237,7 @@ window.API = API;
         ['guia', 'Guía'], ['fecha_programada', 'Fecha programada']];
       var cel = function (v) { var s = String(v == null ? '' : v); if (/^[=+\-@]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; };
       var filas = [cols.map(function (c) { return c[1]; })].concat(items.map(function (s) {
-        return cols.map(function (c) { return c[0] === 'estado' ? cfg.estados[s.estado] : c[0] === 'tipo' ? tipoNombre(s.tipo) : s[c[0]]; });
+        return cols.map(function (c) { return c[0] === 'estado' ? cfg.estados[s.estado] : c[0] === 'tipo' ? s.tipo_nombre : c[0] === 'creada' ? String(s.creada).slice(0, 10) : s[c[0]]; });
       }));
       var blob = new Blob(['﻿' + filas.map(function (r) { return r.map(cel).join(','); }).join('\r\n')], { type: 'text/csv;charset=utf-8' });
       var a = h('a', { href: URL.createObjectURL(blob), download: 'Solicitudes_' + cfg.hoy + '.csv' });
@@ -248,19 +264,19 @@ window.API = API;
 
       var cabecera = h('section', { class: 'tarjeta' },
         h('div', { class: 'cabecera' },
-          h('div', null, h('div', { class: 'folio' }, s.folio), h('p', { class: 'gris chico', style: 'margin:6px 0 0' }, tipoNombre(s.tipo) + ' · creada ' + U.fechaHora(s.creada))),
+          h('div', null, h('div', { class: 'folio' }, s.folio), h('p', { class: 'gris chico', style: 'margin:6px 0 0' }, (s.producto ? s.producto + ' · ' : '') + s.tipo_nombre + ' · creada ' + U.dia(s.creada))),
           h('div', { class: 'acciones' }, s.folio_cstext ? h('span', { class: 'pill e-programada' }, s.folio_cstext) : null,
             U.estado(cfg, s.estado), s.prioridad === 'Urgente' ? h('span', { class: 'pill urgente' }, 'Urgente') : null)),
         U.pasos(cfg, s.estado),
         h('div', { style: 'height:12px' }),
-        info([['Solicita', s.solicitante + ' · ' + s.area], ['Correo', s.correo], ['Teléfono', s.telefono],
-          ['Forma de envío', s.forma_envio], ['Folio', s.referencia], ['Factura', s.cliente], ['Requiere cita', s.horario]]));
+        info([['Solicita', s.solicitante + ' · ' + s.area], ['Correo', s.correo], ['Producto', s.producto], ['Movimiento', s.tipo_nombre],
+          ['Tipo de solicitud', s.prioridad], ['Forma de envío', s.forma_envio]].concat(U.fechas(s))));
 
-      var ruta = h('section', { class: 'tarjeta' }, h('h2', null, 'Ruta y motivo'),
-        info([['Origen', s.origen_nombre + '\n' + s.origen_direccion + '\n' + s.origen_ciudad], ['Contacto en origen', s.origen_contacto],
-          ['Destino', s.destino_nombre + '\n' + s.destino_direccion + '\n' + s.destino_ciudad], ['Contacto en destino', s.destino_contacto]]),
+      var ruta = h('section', { class: 'tarjeta' }, h('h2', null, 'Ruta y detalle'),
+        info([['Lugar de salida', s.origen_nombre + '\n' + s.origen_ciudad], ['Lugar de entrega', s.destino_nombre + '\n' + s.destino_ciudad]]),
         h('div', { style: 'height:12px' }),
-        info([['Motivo y detalles', s.motivo]]));
+        info(U.detalle(s)));
+      var autorizacion = s.aut_estado ? U.autorizacion(s) : null;
       var devolucion = s.tipo === 'devolucion' ? U.devolucion(cfg, s) : null;
       var paquetes = s.paq_total ? U.paquetes(s) : null;
 
@@ -283,6 +299,13 @@ window.API = API;
         h('datalist', { id: 'cat-unidades' }, datos.tipos_unidad.map(function (t) { return h('option', { value: t }); }))];
       var guia = h('input', { class: 'entrada', value: s.guia || '', maxlength: 160 });
       var fprog = h('input', { class: 'entrada', type: 'date', value: s.fecha_programada || '' });
+      /* Fechas de quien solicita: Logística puede asignarlas después (por ejemplo, si quedó «Fecha abierta»). */
+      var freq = h('input', { class: 'entrada', type: 'date', value: s.fecha_requerida || '' });
+      var frec = s.recoleccion === 'Sí' ? h('input', { class: 'entrada', type: 'date', value: s.fecha_recoleccion || '' }) : null;
+      var autGer = h('input', { class: 'entrada', value: s.aut_gerente || '', maxlength: 120 });
+      var autEst = lista(datos.aut_estados.map(function (x) { return [x, x]; }), s.aut_estado);
+      var autFecha = h('input', { class: 'entrada', type: 'date', value: s.aut_fecha || '' });
+      var autCom = h('textarea', { class: 'entrada', rows: 2, maxlength: 1000, placeholder: 'Ej.: Autorizó por correo el 14/10.' }); autCom.value = s.aut_comentario || '';
       var notas = h('textarea', { class: 'entrada', rows: 2, maxlength: 2000 }); notas.value = s.notas_internas || '';
       var mensaje = h('textarea', { class: 'entrada', rows: 3, maxlength: 2000, placeholder: 'Ej.: Programada para el jueves con Transportes X.' });
       var visible = h('input', { type: 'checkbox', checked: true });
@@ -294,8 +317,14 @@ window.API = API;
           campo('Folio CSTEXT', cstext), campo('Categorización', categ),
           campo('Transportista', transp), campo('Unidad asignada', unidad),
           campo('Guía o referencia', guia), campo('Fecha programada', fprog),
+          campo(s.fecha_abierta === 'Sí' ? 'Fecha requerida (está abierta: asígnala aquí)' : 'Fecha requerida', freq),
+          frec ? campo(s.recoleccion_abierta === 'Sí' ? 'Fecha de recolección (abierta: asígnala aquí)' : 'Fecha de recolección', frec) : null,
           campo('Notas internas (no las ve quien solicita)', notas, 'todo'),
           campo('Mensaje', mensaje, 'todo'), catalogos),
+        s.aut_estado ? h('fieldset', { class: 'grupo-aut' }, h('legend', null, 'Autorización de Gerente de Área'),
+          h('div', { class: 'rejilla' }, campo('Nombre del Gerente', autGer), campo('Estatus de autorización', autEst),
+            campo('Fecha de autorización', autFecha), campo('Comentario o evidencia', autCom, 'todo')),
+          h('p', { class: 'gris chico', style: 'margin:8px 0 0' }, 'Mientras no esté «Autorizado», la solicitud no puede pasar a Programada, En tránsito ni Completada. Adjunta la evidencia en Archivos.')) : null,
         h('p', { class: 'gris chico' }, 'Solo seguimiento: los importes se registran en «Fletes 2026» con el folio CSTEXT.'),
         h('div', { style: 'margin:10px 0 14px;display:grid;gap:6px' },
           h('label', { class: 'chico' }, visible, ' El mensaje lo ve quien solicita (si no, queda como nota interna)'),
@@ -305,10 +334,14 @@ window.API = API;
       form.addEventListener('submit', function (ev) {
         ev.preventDefault();
         U.ocupado(guardar, true, 'Guardando…');
-        run('adminActualizar', s.folio, { estado: estado.value, responsable: resp.value, transportista: transp.value, unidad_asignada: unidad.value,
+        var cambios = { estado: estado.value, responsable: resp.value, transportista: transp.value, unidad_asignada: unidad.value,
           guia: guia.value, fecha_programada: fprog.value, folio_cstext: cstext.value, categorizacion: categ.value,
+          fecha_requerida: freq.value !== (s.fecha_requerida || '') ? freq.value : undefined,
+          fecha_recoleccion: frec && frec.value !== (s.fecha_recoleccion || '') ? frec.value : undefined };
+        if (s.aut_estado) Object.assign(cambios, { aut_gerente: autGer.value, aut_estado: autEst.value, aut_fecha: autFecha.value, aut_comentario: autCom.value });
+        run('adminActualizar', s.folio, Object.assign(cambios, {
           notas_internas: notas.value, mensaje: mensaje.value,
-          visible: visible.checked, notificar: avisar.checked })
+          visible: visible.checked, notificar: avisar.checked }))
           .then(function (r) { U.toast('Cambios guardados.' + (avisar.checked && (r.estado !== s.estado || mensaje.value.trim()) ? ' Se avisó por correo.' : '')); pintarDetalle(r); })
           .catch(function (e) { U.ocupado(guardar, false); fallo(e); });
       });
@@ -325,7 +358,8 @@ window.API = API;
       var archivos = h('section', { class: 'tarjeta' }, h('h2', null, 'Archivos'),
         s.archivos.length ? h('ul', { class: 'archivos' }, s.archivos.map(function (a) {
           return h('li', null, h('span', null, h('a', { href: a.url, target: '_blank', rel: 'noopener' }, a.nombre),
-            a.evidencia ? h('span', { class: 'pill e-informacion', style: 'margin-left:6px' }, 'Evidencia') : null),
+            a.evidencia ? h('span', { class: 'pill e-informacion', style: 'margin-left:6px' }, 'Evidencia') : null,
+            a.cotizacion ? h('span', { class: 'pill e-programada', style: 'margin-left:6px' }, 'Cotización') : null),
             h('span', { class: 'gris chico' }, U.tamano(a.tamano) + ' · ' + a.autor));
         })) : h('p', { class: 'gris' }, 'Sin archivos.'),
         h('div', { style: 'margin-top:10px' }, h('label', { class: 'chico', style: 'font-weight:600' }, 'Agregar (evidencia, POD, cotización…)'), subir));
@@ -336,7 +370,7 @@ window.API = API;
             h('span', { class: 'gris chico', style: 'white-space:nowrap' }, (c.estado === 'enviado' ? '✓ ' : '✗ ') + U.fechaHora(c.fecha)));
         })) : h('p', { class: 'gris' }, 'Sin correos.'));
 
-      mount(main, volver, cabecera, h('div', { class: 'detalle' }, h('div', null, devolucion, paquetes, ruta, hilo, correos), h('div', null, form, archivos)));
+      mount(main, volver, cabecera, h('div', { class: 'detalle' }, h('div', null, autorizacion, devolucion, paquetes, ruta, hilo, correos), h('div', null, form, archivos)));
     }
 
     /* ---------------------------------------------------------------- configuración */

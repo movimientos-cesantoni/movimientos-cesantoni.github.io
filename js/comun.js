@@ -87,7 +87,8 @@ window.U = (function () {
     if (!/^\d{4}-\d{2}-\d{2}/.test(ymd || '')) return '';
     return Number(ymd.slice(8, 10)) + ' ' + MESES[Number(ymd.slice(5, 7)) - 1] + ' ' + ymd.slice(0, 4);
   }
-  function fechaHora(iso) { return iso ? dia(iso) + ' · ' + String(iso).slice(11, 16) : ''; }
+  /* Solo se muestran fechas; la hora se guarda internamente para el orden y las validaciones. */
+  function fechaHora(iso) { return iso ? dia(iso) : ''; }
   function tamano(b) { b = Number(b) || 0; return b < 1048576 ? Math.max(1, Math.round(b / 1024)) + ' KB' : (b / 1048576).toFixed(1) + ' MB'; }
 
   function estado(cfg, k) { return h('span', { class: 'pill e-' + k }, cfg.estados[k] || k); }
@@ -134,6 +135,41 @@ window.U = (function () {
       h('p', { class: 'gris chico', style: 'margin:10px 0 0' }, 'Medidas en cm (largo × ancho × alto). Peso volumétrico aprox.: ' + s.paq_vol_kg + ' kg.'));
   }
 
+  /* Fechas de la solicitud: requerida (o abierta) y recolección. */
+  var ENTREGAS = ['envio', 'entrega_recoleccion', 'mercadotecnia'];
+  function fechas(s) {
+    var out = [];
+    if (s.fecha_requerida || s.fecha_abierta) out.push([ENTREGAS.indexOf(s.tipo) >= 0 ? 'Fecha de entrega' : 'Fecha requerida', s.fecha_abierta === 'Sí' ? 'Fecha abierta' : dia(s.fecha_requerida)]);
+    if (s.recoleccion === 'Sí') out.push(['Fecha de recolección', s.recoleccion_abierta === 'Sí' ? 'Fecha abierta' : dia(s.fecha_recoleccion)]);
+    else if (s.recoleccion === 'No') out.push(['Recolección', 'No requiere recolección']);
+    return out;
+  }
+  function articulos(s) {
+    return [].concat(s.articulos || []).map(function (a) { return a.cantidad + ' × ' + a.producto + (a.descripcion ? ' · ' + a.descripcion : ''); }).join('\n');
+  }
+  function contacto(nombre, tel) { return [nombre, tel].filter(Boolean).join(' · '); }
+  /* Datos de la solicitud que ven quien solicita y Logística. */
+  function detalle(s) {
+    return [['Departamento solicitante', s.area], ['Teléfono', s.telefono],
+      ['¿Quién absorbe el costo?', s.costo_absorbe ? s.costo_absorbe + (s.costo_detalle ? ': ' + s.costo_detalle : '') : ''],
+      ['Artículos', articulos(s)], ['Folio', s.referencia], ['Factura', s.cliente], ['Requiere cita', s.horario],
+      ['Dirección de salida', s.origen_direccion], ['Contacto en salida', contacto(s.origen_contacto, s.origen_telefono)], ['Referencias de salida', s.origen_referencias],
+      ['Dirección de entrega', s.destino_direccion], ['Contacto en entrega', contacto(s.destino_contacto, s.destino_telefono)], ['Referencias de entrega', s.destino_referencias],
+      ['Descripción de la solicitud', s.motivo], ['Observaciones', s.observaciones]];
+  }
+  var AUT_CLASE = { 'Pendiente de autorización': 'e-en_revision', 'Autorizado': 'e-completada', 'Rechazado': 'e-rechazada' };
+  /* Solicitudes con menos de 48 horas: autorización del Gerente de Área. */
+  function autorizacion(s) {
+    return h('section', { class: 'tarjeta' },
+      h('div', { class: 'cabecera' }, h('h2', { style: 'margin:0' }, 'Autorización de Gerente de Área'),
+        h('span', { class: 'pill ' + (AUT_CLASE[s.aut_estado] || '') }, s.aut_estado)),
+      h('p', { class: 'gris chico', style: 'margin:8px 0 12px' }, 'Solicitud con menos de 48 horas de anticipación: pueden aplicarse sobrecostos.'),
+      h('dl', { class: 'datos' }, [['Nombre del Gerente', s.aut_gerente], ['Estatus', s.aut_estado], ['Fecha de autorización', dia(s.aut_fecha)],
+        ['Comentario o evidencia', s.aut_comentario], ['Registró', s.aut_registro]].filter(function (d) { return d[1]; }).map(function (d) {
+        return h('div', null, h('dt', null, d[0]), h('dd', { style: 'white-space:pre-wrap' }, d[1]));
+      })));
+  }
+
   /* Archivos: los enlaces «#archivo:FOLIO:ID» se abren armando el archivo desde la base. */
   document.addEventListener('click', function (ev) {
     var a = ev.target.closest && ev.target.closest('a[href^="#archivo:"]');
@@ -151,6 +187,6 @@ window.U = (function () {
     }).catch(function (e) { if (ventana) ventana.close(); toast(e.message, true); });
   });
 
-  return { h: h, mount: mount, devolucion: devolucion, paquetes: paquetes, run: run, leerArchivo: leerArchivo, toast: toast, ocupado: ocupado, dia: dia,
+  return { h: h, mount: mount, devolucion: devolucion, paquetes: paquetes, fechas: fechas, articulos: articulos, detalle: detalle, autorizacion: autorizacion, run: run, leerArchivo: leerArchivo, toast: toast, ocupado: ocupado, dia: dia,
     fechaHora: fechaHora, tamano: tamano, estado: estado, logos: logos, pasos: pasos };
 })();
