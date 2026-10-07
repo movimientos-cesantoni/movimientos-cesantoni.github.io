@@ -31,4 +31,18 @@ y se envía un correo con «Autorizar costo» y «Rechazar». La liga abre `auto
 el folio (`aut_estado`, `aut_por`, `aut_nombre`, `aut_fecha`, `aut_ref`) y queda como evidencia en el expediente. Las reglas solo permiten
 responder una vez y con el token vigente; al reenviar o registrar a mano, la liga anterior deja de servir.
 
-Pruebas: `tests/solicitudes-web/e2e.mjs` (repositorio privado) con el emulador de Firebase: 115 de 115 correctas.
+## Perfiles del panel
+
+| Perfil | Qué hace |
+|---|---|
+| Administrador | Todo: solicitudes, facturación y configuración (personal, alertas por persona, catálogos y consecutivo CSTEXT). |
+| Planeador | Fecha de carga, estatus, monto, datos de la plantilla y autorizaciones. El folio CSTEXT se asigna solo al pasar a Programada. |
+| Facturación | Plantillas de entregas Completadas por proveedor (Excel), y las marca como facturadas. No puede cambiar solicitudes. |
+
+## Modificaciones de quien solicita
+
+Con «Modificar una solicitud» (folio, y correo + clave si no hay sesión) se abre el formulario con los datos del folio. Solo se permite mientras
+está «Recibida» y sin autorización enviada; después se muestra la leyenda de folio bloqueado, con «Crear nueva solicitud con estos datos» y
+«Avisar a Logística por correo». Cada modificación avisa a quien tenga activada la alerta «Solicitud modificada».
+
+Pruebas: `tests/solicitudes-web/e2e.mjs` (repositorio privado) con el emulador de Firebase: 141 de 141 correctas.

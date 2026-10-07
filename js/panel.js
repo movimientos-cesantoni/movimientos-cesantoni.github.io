@@ -1,5 +1,6 @@
 /* Panel de Logística (Liga 2): base de solicitudes. Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=10';
+import * as API from './servidor.js?v=12';
+import { libroXlsx } from './xlsx.js?v=12';
 window.API = API;
 (function () {
     'use strict';
@@ -30,6 +31,10 @@ window.API = API;
       el.value = valor || '';
       return el;
     }
+    /* Perfiles: admin (todo), planeador (opera solicitudes) y facturación (plantillas de entregas concluidas). */
+    var ROL_NOMBRE = { admin: 'Administrador', planeador: 'Planeador', facturacion: 'Facturación' };
+    function rolNombre(r) { return ROL_NOMBRE[r] || r; }
+    function inicioRol() { return yo && yo.rol === 'facturacion' ? facturacion() : tablero(); }
     function nombreDe(usuario) { var u = (datos ? datos.usuarios : []).filter(function (x) { return x.usuario === usuario; })[0]; return u ? u.nombre : usuario; }
     function devolucionPendiente(s) { return s.tipo === 'devolucion' && s.dev_cumple === 'No' && cfg.abiertos.indexOf(s.estado) >= 0; }
 
@@ -46,9 +51,16 @@ window.API = API;
     }
 
     function nav(activa) {
-      var items = yo && !yo.debe_cambiar ? [['solicitudes', 'Solicitudes'], ['config', 'Configuración']] : [];
+      var items = [];
+      if (yo && !yo.debe_cambiar) {
+        if (yo.rol !== 'facturacion') items.push(['solicitudes', 'Solicitudes']);
+        if (yo.rol !== 'planeador') items.push(['facturacion', 'Facturación']);
+        items.push(['config', 'Configuración']);
+      }
       mount(document.getElementById('nav'), items.map(function (i) {
-        return h('button', { type: 'button', 'aria-current': activa === i[0] ? 'page' : null, onclick: function () { i[0] === 'config' ? configuracion() : tablero(); } }, i[1]);
+        return h('button', { type: 'button', 'aria-current': activa === i[0] ? 'page' : null, onclick: function () {
+          if (i[0] === 'config') configuracion(); else if (i[0] === 'facturacion') cargar().then(facturacion); else cargar().then(tablero);
+        } }, i[1]);
       }), yo ? h('button', { type: 'button', onclick: salir }, 'Salir (' + yo.nombre + ')') : null);
     }
 
@@ -105,7 +117,7 @@ window.API = API;
     function despues() {
       if (yo.debe_cambiar) return cambiarPassword(true);
       if (PARAMS.folio) { var f = PARAMS.folio; PARAMS.folio = ''; return cargar().then(function () { detalle(f); }); }
-      cargar().then(tablero);
+      cargar().then(inicioRol);
     }
 
     function cambiarPassword(forzado) {
@@ -256,7 +268,8 @@ window.API = API;
     }
 
     function pintarDetalle(s) {
-      var volver = h('button', { class: 'liga volver', type: 'button', onclick: function () { cargar().then(tablero); } }, '← Volver a solicitudes');
+      var puedeOperar = yo.rol !== 'facturacion', esAdmin = yo.rol === 'admin';
+      var volver = h('button', { class: 'liga volver', type: 'button', onclick: function () { cargar().then(inicioRol); } }, puedeOperar ? '← Volver a solicitudes' : '← Volver a facturación');
       var info = function (pares) {
         return h('dl', { class: 'datos' }, pares.filter(function (d) { return d[1]; }).map(function (d) {
           return h('div', null, h('dt', null, d[0]), h('dd', { style: 'white-space:pre-wrap' }, d[1]));
@@ -288,7 +301,15 @@ window.API = API;
       /* formulario de actualización */
       var estado = lista(Object.keys(cfg.estados).map(function (k) { return [k, cfg.estados[k]]; }), s.estado);
       var resp = lista([['', 'Sin asignar']].concat(datos.usuarios.map(function (u) { return [u.usuario, u.nombre]; })), s.responsable);
-      var cstext = h('input', { class: 'entrada', value: s.folio_cstext || '', maxlength: 20, placeholder: 'CSTEXT756' });
+      /* El folio CSTEXT se asigna solo al programar; solo el administrador lo corrige. */
+      var cstext = h('input', { class: 'entrada', value: s.folio_cstext || '', maxlength: 20, disabled: !esAdmin, placeholder: 'Se asigna al programar' });
+      var monto = h('input', { class: 'entrada', inputmode: 'decimal', value: s.monto ? Number(s.monto).toFixed(2) : '', placeholder: '0.00' });
+      var tipoMov = lista(datos.tipos.map(function (t) { return [t[0], t[1]]; }), s.tipo);
+      var oFact = h('input', { class: 'entrada', value: s.origen_fact || '', maxlength: 160, placeholder: s.origen_direccion || 'Ej. CALERA' });
+      var dFact = h('input', { class: 'entrada', value: s.destino_fact || '', maxlength: 160, placeholder: s.destino_direccion || 'Ej. Gómez Palacio, Dgo.' });
+      var cliFact = h('input', { class: 'entrada', value: s.cliente_fact || '', maxlength: 160, placeholder: String((s.costo_absorbe === 'Otro' ? s.costo_detalle : s.costo_absorbe) || 'CESANTONI').toUpperCase() });
+      var maniobra = lista([['No', 'No'], ['Sí', 'Sí']], s.maniobra || 'No');
+      var cstCampo = h('input', { class: 'entrada', value: s.cst || 'CST', maxlength: 20 });
       var categ = lista([['', 'Sin categorizar']].concat(datos.categorias.map(function (c) { return [c, c]; })), s.categorizacion);
       /* Transportista y unidad sugieren el catálogo pero aceptan escribir otro. */
       var transp = h('input', { class: 'entrada', value: s.transportista || '', maxlength: 160, list: 'cat-transportistas', placeholder: 'Escribe o elige' });
@@ -312,13 +333,16 @@ window.API = API;
           campo('Estado', estado), campo('Responsable', resp),
           campo('Folio CSTEXT', cstext), campo('Categorización', categ),
           campo('Transportista', transp), campo('Unidad asignada', unidad),
-          campo('Guía o referencia', guia), campo('Fecha programada', fprog),
+          campo('Guía o referencia', guia), campo('Fecha de carga', fprog),
+          campo('Monto ($)', monto), campo('Tipo de movimiento', tipoMov),
           campo((nuevo ? 'Fecha tentativa de recolección' : 'Fecha requerida') + (s.fecha_abierta === 'Sí' ? ' (abierta: asígnala aquí)' : ''), freq),
           fent ? campo('Fecha tentativa de entrega' + (s.fecha_abierta === 'Sí' ? ' (abierta: asígnala aquí)' : ''), fent) : null,
           frec ? campo((nuevo ? 'Recolección posterior' : 'Fecha de recolección') + (s.recoleccion_abierta === 'Sí' ? ' (abierta: asígnala aquí)' : ''), frec) : null,
+          h('h3', { class: 'todo', style: 'margin:6px 0 0' }, 'Plantilla de facturación'),
+          campo('Origen', oFact), campo('Destino', dFact), campo('Cliente', cliFact), campo('Requiere factura de maniobra', maniobra), campo('CST', cstCampo),
           campo('Notas internas (no las ve quien solicita)', notas, 'todo'),
           campo('Mensaje', mensaje, 'todo'), catalogos),
-        h('p', { class: 'gris chico' }, 'Solo seguimiento: los importes se registran en «Fletes 2026» con el folio CSTEXT.'),
+        h('p', { class: 'gris chico' }, 'El monto, la fecha de carga y los datos de la plantilla alimentan la vista de Facturación. El folio CSTEXT se asigna solo al programar.'),
         h('div', { style: 'margin:10px 0 14px;display:grid;gap:6px' },
           h('label', { class: 'chico' }, visible, ' El mensaje lo ve quien solicita (si no, queda como nota interna)'),
           h('label', { class: 'chico' }, avisar, ' Avisar por correo a ' + s.correo)),
@@ -328,10 +352,12 @@ window.API = API;
         ev.preventDefault();
         U.ocupado(guardar, true, 'Guardando…');
         var cambios = { estado: estado.value, responsable: resp.value, transportista: transp.value, unidad_asignada: unidad.value,
-          guia: guia.value, fecha_programada: fprog.value, folio_cstext: cstext.value, categorizacion: categ.value,
+          guia: guia.value, fecha_programada: fprog.value, categorizacion: categ.value, monto: monto.value, tipo: tipoMov.value,
+          origen_fact: oFact.value, destino_fact: dFact.value, cliente_fact: cliFact.value, maniobra: maniobra.value, cst: cstCampo.value,
           fecha_requerida: freq.value !== (s.fecha_requerida || '') ? freq.value : undefined,
           fecha_entrega: fent && fent.value !== (s.fecha_entrega || '') ? fent.value : undefined,
           fecha_recoleccion: frec && frec.value !== (s.fecha_recoleccion || '') ? frec.value : undefined };
+        if (esAdmin) cambios.folio_cstext = cstext.value;
         run('adminActualizar', s.folio, Object.assign(cambios, {
           notas_internas: notas.value, mensaje: mensaje.value,
           visible: visible.checked, notificar: avisar.checked }))
@@ -340,7 +366,7 @@ window.API = API;
       });
 
       /* Expediente del folio: cada bloque permite agregar su documento (cotización, autorización, salida…). */
-      var archivos = U.expediente(s, function (clase, lista) {
+      var archivos = U.expediente(s, !puedeOperar ? null : function (clase, lista) {
         lista.reduce(function (p, f) {
           return p.then(function () { return U.leerArchivo(f, cfg.max_mb).then(function (a) { a.clase = clase; return run('adminSubirArchivo', s.folio, a); }); });
         }, Promise.resolve()).then(function () { U.toast('Archivos agregados al folio.'); detalle(s.folio); })
@@ -372,12 +398,12 @@ window.API = API;
       var pendiente = !s.aut_estado || s.aut_estado === 'Pendiente de autorización';
       var tarjetaAut = h('section', { class: 'tarjeta' }, h('h2', null, 'Autorización de costo'),
         U.autorizacion(s) || h('p', { class: 'gris chico' }, 'Esta solicitud no pidió autorización. Si hace falta, envíala desde aquí.'),
-        pendiente ? h('div', { class: 'rejilla', style: 'margin-top:10px' },
+        pendiente && puedeOperar ? h('div', { class: 'rejilla', style: 'margin-top:10px' },
           campo('Correo de quien autoriza', autCorreo, 'todo'), campo('Costo / cotización (va en el correo)', autCosto, 'todo'),
           h('p', { class: 'gris chico todo', style: 'margin:0' }, nCot ? 'Se incluirá ' + (nCot === 1 ? 'la cotización adjunta' : 'las ' + nCot + ' cotizaciones adjuntas') + ' del expediente.'
             : 'Aún no hay cotización en el expediente: puedes agregarla abajo antes de enviar.'),
           h('div', { class: 'todo' }, enviarAut)) : null,
-        s.aut_estado ? h('details', { class: 'aut-manual' }, h('summary', null, 'Registrar a mano (por ejemplo, si autorizó por teléfono)'),
+        s.aut_estado && puedeOperar ? h('details', { class: 'aut-manual' }, h('summary', null, 'Registrar a mano (por ejemplo, si autorizó por teléfono)'),
           h('div', { class: 'rejilla', style: 'margin-top:10px' }, campo('Estatus', autEst), campo('Autorizó', autQuien),
             campo('Fecha', autFecha), campo('Comentario', autCom, 'todo'), h('div', { class: 'todo' }, guardarAut))) : null,
         s.aut_estado ? h('p', { class: 'gris chico', style: 'margin:10px 0 0' }, 'Mientras no esté «Autorizado», la solicitud no puede pasar a Programada, En tránsito ni Completada.') : null);
@@ -388,7 +414,98 @@ window.API = API;
             h('span', { class: 'gris chico', style: 'white-space:nowrap' }, (c.estado === 'enviado' ? '✓ ' : '✗ ') + U.fechaHora(c.fecha)));
         })) : h('p', { class: 'gris' }, 'Sin correos.'));
 
-      mount(main, volver, cabecera, h('div', { class: 'detalle' }, h('div', null, devolucion, paquetes, ruta, archivos, hilo, correos), h('div', null, tarjetaAut, form)));
+      mount(main, volver, cabecera, h('div', { class: 'detalle' }, h('div', null, devolucion, paquetes, ruta, archivos, hilo, correos), h('div', null, tarjetaAut, puedeOperar ? form : facturaInfo(s))));
+    }
+
+    /* Facturación ve los datos de la plantilla, sin poder cambiar la solicitud. */
+    function facturaInfo(s) {
+      return h('section', { class: 'tarjeta' }, h('h2', null, 'Plantilla de facturación'),
+        h('dl', { class: 'datos' }, [['Proveedor', s.transportista], ['Fecha de carga', U.dia(s.fecha_programada)], ['Monto', dinero(s.monto)],
+          ['Consecutivo', s.folio_cstext], ['Cliente', s.cliente_fact], ['Requiere factura de maniobra', s.maniobra || 'No'], ['CST', s.cst || 'CST'],
+          ['Facturada', s.facturada ? U.dia(s.facturada) + (s.facturada_por ? ' · ' + s.facturada_por : '') : 'Pendiente']]
+          .filter(function (d) { return d[1]; }).map(function (d) { return h('div', null, h('dt', null, d[0]), h('dd', null, d[1])); })));
+    }
+
+    /* ---------------------------------------------------------------- facturación */
+    function dinero(v) { return v === '' || v === undefined || v === null || isNaN(Number(v)) ? '' : '$' + Number(v).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+    var MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    function diaCorto(ymd) { return /^\d{4}-\d{2}-\d{2}/.test(ymd || '') ? ymd.slice(8, 10) + '-' + MESES[Number(ymd.slice(5, 7)) - 1] + '-' + ymd.slice(2, 4) : ''; }
+    /* Columnas de la plantilla (como la de Fletes): [título, tipo en Excel, ancho, valor]. */
+    var COLS_FACT = [
+      ['ORIGEN', 'izq', 26, function (s) { return s.origen_fact; }],
+      ['DESTINO', 'izq', 26, function (s) { return s.destino_fact; }],
+      ['FECHA CARGA', 'fecha', 12, function (s) { return s.fecha_programada || String(s.cerrada || '').slice(0, 10); }],
+      ['MONTO', 'moneda', 13, function (s) { return s.monto === '' ? '' : Number(s.monto); }],
+      ['CONSECUTIVO', 'texto', 15, function (s) { return s.folio_cstext; }],
+      ['CLIENTE', 'texto', 18, function (s) { return s.cliente_fact; }],
+      ['REQUIERE FACTURA DE MANIOBRA', 'texto', 20, function (s) { return s.maniobra || 'No'; }],
+      ['CST', 'texto', 8, function (s) { return s.cst || 'CST'; }],
+      ['SOLICITANTE', 'texto', 22, function (s) { return String(s.area || '').toUpperCase(); }]
+    ];
+    var filtrosFact = { desde: '', hasta: '', ver: 'pendientes' };
+    function facturacion() {
+      nav('facturacion');
+      if (!datos) { mount(main, h('p', { class: 'gris' }, 'Cargando…')); return; }
+      var cont = h('div');
+      var fecha = function (s) { return s.fecha_programada || String(s.cerrada || '').slice(0, 10); };
+      function grupos() {
+        var mapa = {};
+        datos.solicitudes.filter(function (s) {
+          var f = fecha(s);
+          return s.estado === 'completada' && (!filtrosFact.desde || f >= filtrosFact.desde) && (!filtrosFact.hasta || f <= filtrosFact.hasta) &&
+            (filtrosFact.ver === 'todas' || (filtrosFact.ver === 'facturadas') === !!s.facturada);
+        }).forEach(function (s) { var p = s.transportista || 'Sin proveedor asignado'; (mapa[p] = mapa[p] || []).push(s); });
+        return Object.keys(mapa).sort().map(function (p) { return { proveedor: p, items: mapa[p].sort(function (a, b) { return fecha(a).localeCompare(fecha(b)); }) }; });
+      }
+      function descargar(g) {
+        var blob = libroXlsx([{ nombre: g.proveedor, columnas: COLS_FACT.map(function (c) { return { titulo: c[0], tipo: c[1], ancho: c[2] }; }),
+          filas: g.items.map(function (s) { return COLS_FACT.map(function (c) { return c[3](s); }); }) }]);
+        var a = h('a', { href: URL.createObjectURL(blob), download: 'Plantilla_' + g.proveedor.replace(/[^\wÁÉÍÓÚÑáéíóúñ]+/g, '_') + '_' + cfg.hoy + '.xlsx' });
+        document.body.appendChild(a); a.click(); setTimeout(function () { a.remove(); }, 1000);
+      }
+      function pintar() {
+        var lista = grupos();
+        if (!lista.length) { mount(cont, h('div', { class: 'tarjeta', style: 'text-align:center' }, h('p', { class: 'gris', style: 'margin:0' }, 'No hay entregas concluidas con estos filtros.'))); return; }
+        mount(cont, lista.map(function (g) {
+          var total = g.items.reduce(function (t, s) { return t + (Number(s.monto) || 0); }, 0);
+          var faltan = g.items.filter(function (s) { return s.monto === '' || !s.folio_cstext; }).length;
+          var pendientes = g.items.filter(function (s) { return !s.facturada; });
+          var bajar = h('button', { class: 'btn btn-pri btn-chico', type: 'button', onclick: function () { descargar(g); } }, '⬇ Descargar plantilla (Excel)');
+          var marcar = h('button', { class: 'btn btn-chico', type: 'button' }, pendientes.length ? 'Marcar como facturadas' : 'Quitar marca de facturadas');
+          marcar.addEventListener('click', function () {
+            U.ocupado(marcar, true, 'Guardando…');
+            run('adminMarcarFacturadas', (pendientes.length ? pendientes : g.items).map(function (s) { return s.folio; }), pendientes.length > 0)
+              .then(function (d) { datos = d; U.toast(pendientes.length ? 'Marcadas como facturadas.' : 'Marca quitada.'); pintar(); })
+              .catch(function (e) { U.ocupado(marcar, false); fallo(e); });
+          });
+          return h('section', { class: 'tarjeta fact-grupo' },
+            h('div', { class: 'cabecera' }, h('div', null, h('h2', { style: 'margin:0' }, g.proveedor),
+              h('p', { class: 'gris chico', style: 'margin:4px 0 0' }, g.items.length + (g.items.length === 1 ? ' entrega' : ' entregas') + ' · total ' + (dinero(total) || '$0.00'))),
+              h('div', { class: 'acciones' }, bajar, marcar)),
+            faltan ? h('div', { class: 'aviso aviso-alerta', style: 'margin:12px 0 0' }, h('p', null, faltan + (faltan === 1 ? ' entrega no tiene' : ' entregas no tienen') + ' monto o consecutivo. Pide al planeador que los capture antes de facturar.')) : null,
+            h('div', { class: 'tabla-caja', style: 'margin-top:12px' }, h('table', { class: 'tabla-fact' },
+              h('thead', null, h('tr', null, COLS_FACT.map(function (c) { return h('th', null, c[0]); }).concat([h('th', null, 'FOLIO')]))),
+              h('tbody', null, g.items.map(function (s) {
+                var tr = h('tr', { tabindex: '0' }, COLS_FACT.map(function (c) {
+                  var v = c[3](s);
+                  return h('td', { class: c[1] === 'moneda' ? 'celda-monto' : c[1] === 'izq' ? '' : 'centro' }, c[1] === 'moneda' ? dinero(v) : c[1] === 'fecha' ? diaCorto(v) : v);
+                }).concat([h('td', { class: 'centro', style: 'white-space:nowrap' }, s.folio, s.facturada ? h('div', { class: 'sub' }, 'Facturada ' + U.dia(s.facturada)) : null)]));
+                tr.addEventListener('click', function () { detalle(s.folio); });
+                return tr;
+              })))));
+        }));
+      }
+      var desde = h('input', { class: 'entrada', type: 'date', value: filtrosFact.desde });
+      var hasta = h('input', { class: 'entrada', type: 'date', value: filtrosFact.hasta });
+      var ver = lista([['pendientes', 'Pendientes de facturar'], ['facturadas', 'Ya facturadas'], ['todas', 'Todas']], filtrosFact.ver);
+      [[desde, 'desde'], [hasta, 'hasta'], [ver, 'ver']].forEach(function (x) { x[0].addEventListener('change', function () { filtrosFact[x[1]] = x[0].value; pintar(); }); });
+      mount(main,
+        h('div', { class: 'cabecera', style: 'margin-bottom:14px' }, h('div', null, h('h1', { style: 'margin:0' }, 'Facturación'),
+          h('p', { class: 'gris chico', style: 'margin:4px 0 0' }, 'Entregas concluidas (Completadas), separadas por proveedor. Cada proveedor descarga su propia plantilla.')),
+          h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { cargar().then(facturacion); } }, 'Actualizar')),
+        h('div', { class: 'filtros filtros-fact' }, campo('Fecha de carga desde', desde), campo('Hasta', hasta), campo('Ver', ver)),
+        cont);
+      pintar();
     }
 
     /* ---------------------------------------------------------------- configuración */
@@ -397,34 +514,112 @@ window.API = API;
       mount(main, h('p', { class: 'gris' }, 'Cargando…'));
       run('adminConfig').then(function (c) {
         var esAdmin = yo.rol === 'admin';
-        var avisos = h('textarea', { class: 'entrada', rows: 3, disabled: !esAdmin }); avisos.value = c.avisos;
-        var guardarAvisos = h('button', { class: 'btn btn-osc btn-chico', type: 'button', hidden: !esAdmin }, 'Guardar');
-        guardarAvisos.addEventListener('click', function () {
-          U.ocupado(guardarAvisos, true, 'Guardando…');
-          run('adminGuardarAvisos', avisos.value).then(function (v) { U.ocupado(guardarAvisos, false); avisos.value = v; U.toast('Correos de aviso guardados.'); })
-            .catch(function (e) { U.ocupado(guardarAvisos, false); fallo(e); });
-        });
         var partes = [h('h1', null, 'Configuración'),
-          h('section', { class: 'tarjeta' }, h('h2', null, 'Avisos de nuevas solicitudes'),
-            h('p', { class: 'gris chico' }, 'Correos que reciben cada solicitud nueva y los mensajes de solicitudes sin responsable. Sepáralos con comas.'),
-            avisos, h('div', { style: 'margin-top:8px' }, guardarAvisos)),
+          h('section', { class: 'tarjeta' }, h('h2', null, 'Mi cuenta'), h('p', null, yo.nombre + ' · ' + yo.correo + ' · ' + rolNombre(yo.rol)),
+            h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { cambiarPassword(false); } }, 'Cambiar mi contraseña')),
           h('section', { class: 'tarjeta' }, h('h2', null, 'Enlaces'),
             h('p', null, 'Portal para solicitar (compártelo con las áreas): ', h('br'), h('a', { href: c.url, target: '_blank', rel: 'noopener' }, c.url)),
-            h('p', null, 'Este panel (base de Logística): ', h('br'), h('a', { href: c.panel, target: '_blank', rel: 'noopener' }, c.panel))),
-          h('section', { class: 'tarjeta' }, h('h2', null, 'Mi cuenta'), h('p', null, yo.nombre + ' · ' + yo.correo + ' · ' + (yo.rol === 'admin' ? 'Administrador' : 'Operador')),
-            h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { cambiarPassword(false); } }, 'Cambiar mi contraseña'))];
-        if (esAdmin) partes.push(usuarios(c.usuarios));
+            h('p', null, 'Este panel (base de Logística): ', h('br'), h('a', { href: c.panel, target: '_blank', rel: 'noopener' }, c.panel)))];
+        if (esAdmin) partes.push(alertas(c), consecutivo(c), catalogos(c), usuarios(c.usuarios, c.roles));
         mount(main, partes);
       }).catch(fallo);
     }
 
-    function usuarios(cuentas) {
+    /* Alertas por correo: cada persona elige qué avisos recibe. */
+    function alertas(c) {
+      var filas = c.personas.map(function (p) { return { nombre: p.nombre || '', correo: p.correo, alertas: (p.alertas || []).slice() }; });
+      var caja = h('div');
+      function pintar() {
+        mount(caja, filas.length ? h('div', { class: 'tabla-caja' }, h('table', { class: 'tabla-alertas' },
+          h('thead', null, h('tr', null, [h('th', null, 'Nombre'), h('th', null, 'Correo')].concat(c.alertas.map(function (a) { return h('th', { class: 'centro' }, a[1]); }), [h('th', null, '')]))),
+          h('tbody', null, filas.map(function (f, i) {
+            var nombre = h('input', { class: 'entrada', value: f.nombre, placeholder: 'Nombre', 'aria-label': 'Nombre para alertas' });
+            var correo = h('input', { class: 'entrada', type: 'email', value: f.correo, placeholder: 'correo@cesantoni.com.mx', 'aria-label': 'Correo para alertas' });
+            nombre.addEventListener('input', function () { f.nombre = nombre.value; });
+            correo.addEventListener('input', function () { f.correo = correo.value; });
+            return h('tr', { class: 'sin-clic' }, h('td', null, nombre), h('td', null, correo), c.alertas.map(function (a) {
+              var ck = h('input', { type: 'checkbox', checked: f.alertas.indexOf(a[0]) >= 0, 'aria-label': a[1] + ' · ' + (f.correo || 'persona ' + (i + 1)) });
+              ck.addEventListener('change', function () { f.alertas = f.alertas.filter(function (x) { return x !== a[0]; }).concat(ck.checked ? [a[0]] : []); });
+              return h('td', { class: 'centro' }, ck);
+            }), h('td', null, h('button', { class: 'liga chico', type: 'button', onclick: function () { filas.splice(i, 1); pintar(); } }, 'Quitar')));
+          })))) : h('p', { class: 'gris' }, 'Aún no hay personas. Agrega a quien debe recibir avisos.'));
+      }
+      var agregar = h('button', { class: 'btn btn-chico', type: 'button', onclick: function () {
+        filas.push({ nombre: '', correo: '', alertas: c.alertas.map(function (a) { return a[0]; }) }); pintar();
+        var ins = caja.querySelectorAll('input[type=email]'); if (ins.length) ins[ins.length - 1].focus();
+      } }, '+ Agregar persona');
+      var guardar = h('button', { class: 'btn btn-osc btn-chico', type: 'button' }, 'Guardar alertas');
+      guardar.addEventListener('click', function () {
+        U.ocupado(guardar, true, 'Guardando…');
+        run('adminGuardarAlertas', filas).then(function (p) {
+          U.ocupado(guardar, false); filas = p.map(function (x) { return { nombre: x.nombre, correo: x.correo, alertas: x.alertas.slice() }; }); pintar(); U.toast('Alertas guardadas.');
+        }).catch(function (e) { U.ocupado(guardar, false); fallo(e); });
+      });
+      pintar();
+      return h('section', { class: 'tarjeta' }, h('h2', null, 'Alertas por correo'),
+        h('p', { class: 'gris chico' }, 'Marca qué avisos automáticos recibe cada persona: solicitudes nuevas, modificaciones, mensajes, respuestas de autorización y entregas concluidas (para Facturación). Además, el responsable asignado recibe los avisos de sus solicitudes.'),
+        caja, h('div', { class: 'acciones', style: 'margin-top:10px' }, agregar, guardar));
+    }
+
+    /* Consecutivo del folio CSTEXT: desde qué número sigue. */
+    function consecutivo(c) {
+      var n = h('input', { class: 'entrada', inputmode: 'numeric', value: c.cstext_siguiente || '', placeholder: 'Ej. 760', style: 'max-width:180px' });
+      var vista = h('p', { class: 'gris chico' });
+      var pintar = function () { var v = String(n.value).replace(/\D/g, ''); vista.textContent = v ? 'El siguiente folio será CSTEXT' + v.padStart(5, '0') + '.' : 'Escribe el número en el que te quedaste.'; };
+      n.addEventListener('input', pintar); pintar();
+      var guardar = h('button', { class: 'btn btn-osc btn-chico', type: 'button' }, 'Guardar consecutivo');
+      guardar.addEventListener('click', function () {
+        U.ocupado(guardar, true, 'Guardando…');
+        run('adminGuardarCstext', n.value).then(function () { U.ocupado(guardar, false); U.toast('Consecutivo guardado.'); })
+          .catch(function (e) { U.ocupado(guardar, false); fallo(e); });
+      });
+      return h('section', { class: 'tarjeta' }, h('h2', null, 'Folio CSTEXT automático'),
+        h('p', { class: 'gris chico' }, 'Se asigna solo cuando el planeador pasa una solicitud a Programada (o después). ' + (c.cstext_ultimo ? 'Último asignado: ' + c.cstext_ultimo + '.' : 'Aún no se ha asignado ninguno.')),
+        campo('Siguiente número', n), vista, guardar);
+    }
+
+    /* Catálogos: áreas, «¿Qué envías?» y tipos de movimiento. */
+    function catalogos(c) {
+      var areas = h('textarea', { class: 'entrada', rows: 8 }); areas.value = c.catalogos.areas.join('\n');
+      var productos = h('textarea', { class: 'entrada', rows: 8 }); productos.value = c.catalogos.productos.join('\n');
+      var tipos = c.catalogos.tipos.map(function (t) { return { clave: t.clave, nombre: t.nombre, descripcion: t.descripcion }; });
+      var caja = h('div', { class: 'tipos-edit' });
+      function pintar() {
+        mount(caja, tipos.map(function (t, i) {
+          var nombre = h('input', { class: 'entrada', value: t.nombre, placeholder: 'Nombre del movimiento', 'aria-label': 'Nombre del movimiento' });
+          var desc = h('input', { class: 'entrada', value: t.descripcion, placeholder: 'Descripción (opcional)', 'aria-label': 'Descripción' });
+          nombre.addEventListener('input', function () { t.nombre = nombre.value; });
+          desc.addEventListener('input', function () { t.descripcion = desc.value; });
+          var fijo = c.tipos_fijos.indexOf(t.clave) >= 0;
+          return h('div', { class: 'tipo-fila' }, nombre, desc, fijo ? h('span', { class: 'gris chico', title: 'Lo usa el formulario' }, 'Fijo')
+            : h('button', { class: 'liga chico', type: 'button', onclick: function () { tipos.splice(i, 1); pintar(); } }, 'Quitar'));
+        }));
+      }
+      pintar();
+      var guardar = h('button', { class: 'btn btn-osc btn-chico', type: 'button' }, 'Guardar catálogos');
+      guardar.addEventListener('click', function () {
+        U.ocupado(guardar, true, 'Guardando…');
+        var linea = function (t) { return t.value.split('\n').map(function (x) { return x.trim(); }).filter(Boolean); };
+        run('adminGuardarCatalogos', { areas: linea(areas), productos: linea(productos), tipos: tipos }).then(function (r) {
+          U.ocupado(guardar, false); tipos = r.tipos; pintar(); U.toast('Catálogos guardados. El formulario ya los muestra.');
+          return U.run('configPortal').then(function (x) { cfg = x; });
+        }).catch(function (e) { U.ocupado(guardar, false); fallo(e); });
+      });
+      return h('section', { class: 'tarjeta' }, h('h2', null, 'Catálogos'),
+        h('p', { class: 'gris chico' }, 'Lo que ven las áreas en el formulario. Uno por renglón. «Otro» siempre aparece al final de «¿Qué envías?».'),
+        h('div', { class: 'rejilla' }, campo('Departamento / Área', areas), campo('¿Qué envías?', productos),
+          h('div', { class: 'todo' }, h('label', { class: 'etiqueta-panel' }, 'Tipos de movimiento (los usa el planeador para clasificar)'), caja,
+            h('button', { class: 'btn btn-chico', type: 'button', style: 'margin-top:8px', onclick: function () { tipos.push({ clave: '', nombre: '', descripcion: '' }); pintar(); } }, '+ Agregar tipo de movimiento'))),
+        h('div', { style: 'margin-top:12px' }, guardar));
+    }
+
+    function usuarios(cuentas, roles) {
       var tabla = h('div', { class: 'tabla-caja', style: 'margin-bottom:16px' }, h('table', null,
         h('thead', null, h('tr', null, ['Nombre', 'Correo', 'Rol', 'Estado', 'Último acceso'].map(function (t) { return h('th', null, t); }))),
         h('tbody', null, cuentas.map(function (u) {
           var estado = u.pendiente ? 'Invitado (aún no entra)' : (u.activo ? (u.debe_cambiar ? 'Activo · debe cambiar contraseña' : 'Activo') : 'Inactivo');
           var tr = h('tr', null, h('td', null, h('b', null, u.nombre)), h('td', null, u.correo || '—'),
-            h('td', null, u.rol === 'admin' ? 'Administrador' : 'Operador'), h('td', null, estado),
+            h('td', null, rolNombre(u.rol)), h('td', null, estado),
             h('td', null, u.ultimo_acceso ? U.fechaHora(u.ultimo_acceso) : 'Nunca'));
           tr.addEventListener('click', function () { if (u.pendiente) U.toast('Invitación pendiente: entrará con la contraseña que ya usa.'); else editar(u); });
           return tr;
@@ -434,13 +629,16 @@ window.API = API;
         var nuevo = !u;
         var nombre = h('input', { class: 'entrada', value: nuevo ? '' : u.nombre });
         var correo = h('input', { class: 'entrada', type: 'email', value: nuevo ? '' : u.correo, disabled: !nuevo });
-        var rol = lista([['operador', 'Operador'], ['admin', 'Administrador']], nuevo ? 'operador' : u.rol);
+        var rol = lista(roles.map(function (r) { return [r[0], r[1]]; }), nuevo ? 'planeador' : u.rol);
+        var ayudaRol = h('p', { class: 'gris chico todo', style: 'margin:0' });
+        var explicar = function () { var r = roles.filter(function (x) { return x[0] === rol.value; })[0]; ayudaRol.textContent = r ? r[1] + ': ' + r[2] : ''; };
+        rol.addEventListener('change', explicar); explicar();
         var activo = h('input', { type: 'checkbox', checked: nuevo || u.activo });
         var pass = h('input', { class: 'entrada', type: 'text', autocomplete: 'off', placeholder: 'Mínimo 10, con letras y números' });
         var reset = h('input', { type: 'checkbox' });
         var btn = h('button', { class: 'btn btn-pri btn-chico', type: 'submit' }, nuevo ? 'Dar de alta' : 'Guardar cambios');
         mount(form, h('h3', null, nuevo ? 'Dar de alta a una persona' : 'Editar a ' + u.nombre),
-          h('div', { class: 'rejilla' }, campo('Nombre', nombre), campo('Correo (también recibe avisos de sus solicitudes)', correo), campo('Rol', rol),
+          h('div', { class: 'rejilla' }, campo('Nombre', nombre), campo('Correo (también recibe avisos de sus solicitudes)', correo), campo('Perfil', rol), ayudaRol,
             nuevo ? campo('Contraseña temporal', pass) : h('label', { class: 'chico', style: 'align-self:end' }, activo, ' Activo'),
             nuevo ? h('p', { class: 'gris chico todo', style: 'margin:0' }, 'Si esa persona ya tiene cuenta (por ejemplo, en el panel de proveedores), queda invitada y entra con su misma contraseña.')
               : h('label', { class: 'chico todo' }, reset, ' Enviarle un correo para crear una nueva contraseña')),

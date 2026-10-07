@@ -38,3 +38,11 @@ export const CAMPOS = [["solicitante","Nombre del solicitante",true,120],["area"
 export const CAMPOS_LOGISTICA = ["folio_cstext","categorizacion","responsable","transportista","unidad_asignada","guia","fecha_programada","notas_internas"];
 /* Expediente del folio: tipos de documento (además de los archivos generales). */
 export const CLASES_ARCHIVO = ["evidencia","cotizacion","autorizacion","salida"];
+/* Perfiles del panel. «operador» es el nombre anterior de «planeador». */
+export const ROLES = [["admin","Administrador","Ve todo: solicitudes, facturación y configuración (personal, alertas y catálogos)."],["planeador","Planeador","Programa la fecha de carga, cambia estatus, captura montos y asigna el folio CSTEXT."],["facturacion","Facturación","Descarga las plantillas de entregas concluidas por proveedor y las marca como facturadas."]];
+/* Alertas por correo que cada persona puede recibir. */
+export const ALERTAS = [["nueva","Solicitud nueva"],["modificada","Solicitud modificada"],["mensaje","Mensajes y cancelaciones"],["autorizacion","Respuesta de autorización"],["completada","Entrega concluida (facturación)"]];
+/* Movimientos que usa la lógica del formulario: no se pueden borrar del catálogo. */
+export const TIPOS_FIJOS = ["envio","entrega_recoleccion","devolucion"];
+export const CSTEXT_PREFIJO = "CSTEXT";
+export const CST = "CST";

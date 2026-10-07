@@ -4,7 +4,7 @@
  * La seguridad real la imponen las reglas de Firestore (firestore.rules, bloque «Solicitudes de movimientos»).
  */
 import * as fb from './firebase-sdk.js?v=13';
-import * as C from './catalogos.js?v=10';
+import * as C from './catalogos.js?v=12';
 
 const CFG = window.CP_CONFIG || {};
 const COL = { config: 'sm_config', admins: 'sm_admins', inv: 'sm_invitaciones', sol: 'sm_solicitudes', correos: 'sm_correos', aut: 'sm_autorizaciones' };
@@ -14,6 +14,19 @@ const CHUNK = 700000;
 const VERSION = '1.0-web';
 
 let auth = null, db = null;
+/* Catálogos vigentes: los de catalogos.js, o los que el administrador editó en sm_config/catalogos. */
+let CAT = { areas: C.AREAS, productos: C.PRODUCTOS, tipos: C.TIPOS };
+function aplicarCatalogos(c) {
+  c = c || {};
+  const productos = [].concat(c.productos || []).filter((x) => x && x !== 'Otro');
+  const tipos = [].concat(c.tipos || []).filter((t) => t && t.clave && t.nombre);
+  CAT = {
+    areas: (c.areas || []).length ? c.areas.slice() : C.AREAS,
+    productos: productos.length ? productos.map((x) => [x, '']).concat([['Otro', '']]) : C.PRODUCTOS,
+    tipos: tipos.length ? tipos.map((t) => [t.clave, t.nombre, t.descripcion || '']) : C.TIPOS
+  };
+}
+async function cargarCatalogos() { try { aplicarCatalogos(await getOne(ref(COL.config, 'catalogos'))); } catch (e) { /* se quedan los de catalogos.js */ } }
 
 /* ------------------------------------------------------------------ arranque */
 function emular(a, d) {
@@ -28,7 +41,7 @@ export function iniciar(ambito) {
   auth = fb.getAuth(app);
   db = fb.getFirestore(app);
   emular(auth, db);
-  return new Promise((ok) => { const off = fb.onAuthStateChanged(auth, () => { off(); ok(true); }); });
+  return new Promise((ok) => { const off = fb.onAuthStateChanged(auth, () => { off(); ok(true); }); }).then(cargarCatalogos).then(() => true);
 }
 
 /* ------------------------------------------------------------------ utilidades */
@@ -49,7 +62,7 @@ function azar(n, chars) { const b = new Uint8Array(n); crypto.getRandomValues(b)
 const nuevoId = () => azar(20, 'abcdefghijklmnopqrstuvwxyz0123456789');
 const nuevaClave = () => { const c = azar(8, 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'); return c.slice(0, 4) + '-' + c.slice(4); };
 const correoOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || ''));
-const tipoNombre = (k) => { const t = C.TIPOS.find((x) => x[0] === k); return t ? t[1] : k; };
+const tipoNombre = (k) => { const t = CAT.tipos.concat(C.TIPOS).find((x) => x[0] === k); return t ? t[1] : k; };
 /* «Normal» es el nombre anterior de «Programado». */
 const prioridad = (p) => (p === 'Normal' ? 'Programado' : p || '');
 const esFecha = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
@@ -169,8 +182,13 @@ async function enviarCorreo(c) {
   try { await fb.setDoc(ref(COL.correos, nuevoId()), reg); } catch (e) { /* la bitácora no detiene el flujo */ }
   return reg;
 }
-async function avisos() {
-  try { const d = await getOne(ref(COL.config, 'avisos')); return ((d && d.correos) || []).filter(correoOk); } catch (e) { return []; }
+/* Correos que reciben una alerta. Cada persona elige sus alertas en Configuración; sin personas, se usa la lista general. */
+async function avisos(tipo) {
+  try {
+    const d = (await getOne(ref(COL.config, 'avisos'))) || {};
+    if ((d.personas || []).length) return d.personas.filter((x) => correoOk(x.correo) && (x.alertas || []).includes(tipo)).map((x) => x.correo);
+    return (d.correos || []).filter(correoOk);
+  } catch (e) { return []; }
 }
 
 /* ------------------------------------------------------------------ validación */
@@ -184,10 +202,10 @@ function validar(d) {
     else if (v.length > c[3]) errores[c[0]] = 'Máximo ' + c[3] + ' caracteres.';
   });
   if (d.correo && !correoOk(d.correo)) errores.correo = 'Escribe un correo válido.';
-  if (d.producto_tipo && !C.PRODUCTOS.some((x) => x[0] === d.producto_tipo)) errores.producto_tipo = 'Elige qué envías.';
+  if (d.producto_tipo && !CAT.productos.some((x) => x[0] === d.producto_tipo)) errores.producto_tipo = 'Elige qué envías.';
   if (d.producto_tipo === 'Otro' && !d.producto_otro) errores.producto_otro = 'Obligatorio.';
   if (d.producto_tipo !== 'Otro') d.producto_otro = '';
-  if (d.tipo && !C.TIPOS.some((t) => t[0] === d.tipo)) errores.tipo = 'Elige un tipo.';
+  if (d.tipo && !CAT.tipos.concat(C.TIPOS).some((t) => t[0] === d.tipo)) errores.tipo = 'Elige un tipo.';
   if (d.tipo === 'otro' && !d.tipo_otro) errores.tipo_otro = 'Obligatorio.';
   if (d.tipo !== 'otro') d.tipo_otro = '';
   if (d.forma_envio && !C.FORMAS_ENVIO.includes(d.forma_envio)) errores.forma_envio = 'Elige el tipo de servicio.';
@@ -248,10 +266,10 @@ function especificaciones(lista, paqueteria) {
 /* ------------------------------------------------------------------ portal: quien solicita */
 export function configPortal() {
   const u = auth && auth.currentUser;
-  return { areas: C.AREAS, tipos: C.TIPOS, estados: C.ESTADOS, abiertos: C.ABIERTOS, cancelables: C.CANCELABLES,
+  return { areas: CAT.areas, tipos: CAT.tipos, estados: C.ESTADOS, abiertos: C.ABIERTOS, cancelables: C.CANCELABLES,
     formas_envio: C.FORMAS_ENVIO, paqueteria: C.PAQUETERIA, factor_volumetrico: C.FACTOR_VOLUMETRICO,
     motivos_devolucion: C.MOTIVOS_DEVOLUCION, checklist: C.CHECKLIST_DEVOLUCION, max_mb: MAX_MB, hoy: hoy(),
-    limite_programado: sumarDias(hoy(), C.DIAS_ANTICIPACION), productos: C.PRODUCTOS, costos: C.COSTOS, costo_autoriza: C.COSTO_AUTORIZA,
+    limite_programado: sumarDias(hoy(), C.DIAS_ANTICIPACION), productos: CAT.productos, costos: C.COSTOS, costo_autoriza: C.COSTO_AUTORIZA,
     aut_estados: C.AUT_ESTADOS, condiciones: C.CONDICIONES,
     sesion: u ? { correo: u.email } : null };
 }
@@ -321,10 +339,13 @@ function fechasTexto(s) {
   }
   return out.filter((x) => x[1]);
 }
+/* Cliente de la plantilla de facturación: quién absorbe el costo (CESANTONI, cliente, proveedor u otro). */
+const clienteFactura = (s) => String((s.costo_absorbe === 'Otro' ? s.costo_detalle : s.costo_absorbe) || 'CESANTONI').toUpperCase();
 const costoTexto = (s) => (s.costo_absorbe ? s.costo_absorbe + (s.costo_detalle ? ': ' + s.costo_detalle : '') : '');
 
 /* Crea la solicitud. Sin sesión, crea el acceso de quien solicita (correo + clave) como en proveedores. */
-export async function crearSolicitud(datos, cuenta) {
+/* Valida lo capturado en el formulario (alta o modificación) y calcula lo derivado. */
+function prepararDatos(datos) {
   datos = datos || {};
   const d = {};
   C.CAMPOS.forEach((c) => { d[c[0]] = datos[c[0]]; });
@@ -337,6 +358,14 @@ export async function crearSolicitud(datos, cuenta) {
   if (Object.keys(errores).length) throw fallo('Revisa los campos marcados: ' + Object.keys(errores).map((k) => C.CAMPOS.find((c) => c[0] === k)[1]).join(', ') + '.');
   d.correo = d.correo.toLowerCase();
   const fuera = fueraDeTiempo(d.fecha_requerida);
+  const derivados = { dev_cumple: d.tipo === 'devolucion' ? (marcados.length === C.CHECKLIST_DEVOLUCION.length ? 'Sí' : 'No') : '',
+    articulos: esp.filas, paquetes: esp.texto, paq_total: String(esp.total), paq_peso_kg: esp.peso ? String(esp.peso) : '', paq_vol_kg: esp.vol ? String(esp.vol) : '',
+    fuera_tiempo: fuera ? 'Sí' : '', aut_estado: d.aut_motivo ? C.AUT_PENDIENTE : '' };
+  return { d, fuera, derivados };
+}
+
+export async function crearSolicitud(datos, cuenta) {
+  const { d, fuera, derivados } = prepararDatos(datos);
 
   let claveNueva = '';
   if (!auth.currentUser) {
@@ -358,10 +387,7 @@ export async function crearSolicitud(datos, cuenta) {
     const n = (cs.exists() ? Number(cs.data().n) || 0 : 0) + 1;
     folio = 'SOL-' + String(n).padStart(4, '0');
     if (cs.exists()) tx.update(cref, { n, ultimo: folio }); else tx.set(cref, { n, ultimo: folio });
-    tx.set(ref(COL.sol, folio), Object.assign({}, d, { folio, n, uid, estado: 'recibida', creada: t, actualizada: t, cerrada: '',
-      dev_cumple: d.tipo === 'devolucion' ? (marcados.length === C.CHECKLIST_DEVOLUCION.length ? 'Sí' : 'No') : '',
-      articulos: esp.filas, paquetes: esp.texto, paq_total: String(esp.total), paq_peso_kg: esp.peso ? String(esp.peso) : '', paq_vol_kg: esp.vol ? String(esp.vol) : '',
-      fuera_tiempo: fuera ? 'Sí' : '', aut_estado: d.aut_motivo ? C.AUT_PENDIENTE : '', condiciones_fecha: t }));
+    tx.set(ref(COL.sol, folio), Object.assign({}, d, derivados, { folio, n, uid, estado: 'recibida', creada: t, actualizada: t, cerrada: '', condiciones_fecha: t }));
     tx.set(ref(COL.sol, folio, 'seguimiento', nuevoId()), { fecha: t, autor: d.solicitante, autor_tipo: 'solicitante', visible: true, estado: 'recibida', mensaje: 'Solicitud creada.' });
   });
   const sol = await getOne(ref(COL.sol, folio));
@@ -374,7 +400,7 @@ export async function crearSolicitud(datos, cuenta) {
       .concat([['Qué envías', productoNombre(sol)], ['Movimiento', movimientoNombre(sol)], ['Tipo de servicio', sol.forma_envio]], fechas, [['Ruta', ruta]]),
     boton: { texto: 'Ver mis solicitudes', url: urlPortal() },
     nota: claveNueva ? 'Con tu correo y esta clave consultas todas tus solicitudes. Si la pierdes, en el portal elige «Olvidé mi clave».' : '' });
-  await enviarCorreo({ plantilla: 'interno', folio, para: await avisos(), etiqueta: sol.prioridad === 'Urgente' ? 'URGENTE' : 'NUEVA SOLICITUD',
+  await enviarCorreo({ plantilla: 'interno', folio, para: await avisos('nueva'), etiqueta: sol.prioridad === 'Urgente' ? 'URGENTE' : 'NUEVA SOLICITUD',
     asunto: (sol.prioridad === 'Urgente' ? 'URGENTE · ' : '') + 'Nueva solicitud ' + folio + ' · ' + productoNombre(sol) + ' · ' + movimientoNombre(sol),
     titulo: productoNombre(sol) + ' · ' + movimientoNombre(sol), parrafos: [sol.solicitante + ' (' + sol.area + ') registró una solicitud.']
       .concat(sol.motivo ? ['Descripción: ' + sol.motivo] : [], fuera ? ['Menos de 48 horas de anticipación: puede aplicar sobrecosto.'] : [],
@@ -385,6 +411,48 @@ export async function crearSolicitud(datos, cuenta) {
       .concat(sol.tipo === 'devolucion' ? [['Devolución', sol.dev_motivo + ' · ' + (sol.dev_cumple === 'Sí' ? 'cumple todos los puntos' : 'NO cumple todos los puntos: revisar')]] : []),
     boton: { texto: 'Abrir en el panel', url: urlPanel(folio) } });
   return { folio, clave: claveNueva, solicitud: await vistaPublica(folio) };
+}
+
+/* ------------------------------------------------------------------ modificación por quien solicita
+   Solo mientras el folio está «Recibida» (antes de que Logística lo pase a revisión) y sin autorización enviada. */
+export const LEYENDA_BLOQUEO = 'Este folio ya no admite modificaciones porque Logística ya está trabajando en él. Si necesitas un cambio, genera una nueva solicitud con los datos correctos y avisa a Logística por correo indicando este folio y el cambio que necesitas.';
+const MODIFICABLES = ['solicitante', 'area', 'telefono', 'tipo', 'prioridad', 'forma_envio', 'horario', 'motivo', 'dev_motivo', 'dev_checklist',
+  'origen_direccion', 'origen_contacto', 'origen_telefono', 'origen_link', 'destino_direccion', 'destino_contacto', 'destino_telefono', 'destino_link',
+  'producto_tipo', 'producto_otro', 'tipo_otro', 'articulos', 'observaciones', 'costo_absorbe', 'costo_detalle', 'fecha_requerida', 'fecha_entrega',
+  'fecha_abierta', 'recoleccion', 'fecha_recoleccion', 'recoleccion_abierta', 'fuera_tiempo', 'aut_estado', 'aut_correo', 'aut_motivo', 'dev_cumple',
+  'paquetes', 'paq_total', 'paq_peso_kg', 'paq_vol_kg', 'acepta_condiciones'];
+const motivoBloqueo = (s) => (s.estado !== 'recibida' ? 'Estado: ' + (C.ESTADOS[s.estado] || s.estado) : s.aut_enviada ? 'La autorización de costo ya se envió.' : '');
+export async function solicitudParaModificar(folio) {
+  const s = await consultarSolicitud(folio);
+  const bloqueo = motivoBloqueo(s);
+  return Object.assign(s, { modificable: !bloqueo, bloqueo, leyenda: bloqueo ? LEYENDA_BLOQUEO : '', contacto_logistica: (await avisos('modificada')).slice(0, 3) });
+}
+export async function modificarSolicitud(folio, datos) {
+  const s = await consultarSolicitud(folio);
+  if (motivoBloqueo(s)) throw fallo(LEYENDA_BLOQUEO);
+  const { d, fuera, derivados } = prepararDatos(Object.assign({}, datos, { correo: s.correo }));
+  const nuevo = Object.assign({}, d, derivados), t = ahora(), patch = { actualizada: t, modificada: t, modificaciones: (Number(s.modificaciones) || 0) + 1, condiciones_fecha: t };
+  MODIFICABLES.forEach((k) => { if (nuevo[k] !== undefined) patch[k] = nuevo[k]; });
+  /* Qué cambió, con el nombre que ve quien solicita. */
+  const etiqueta = (k) => (C.CAMPOS.find((c) => c[0] === k) || [k, { articulos: 'Especificaciones', paquetes: 'Especificaciones', tipo: 'Tipo de movimiento' }[k] || k])[1];
+  const igual = (x, y) => JSON.stringify(x === undefined ? '' : x) === JSON.stringify(y === undefined ? '' : y);
+  const cambios = [...new Set(MODIFICABLES.filter((k) => !['paq_total', 'paq_peso_kg', 'paq_vol_kg', 'fuera_tiempo', 'aut_estado', 'aut_motivo', 'dev_cumple', 'acepta_condiciones', 'prioridad'].includes(k) &&
+    patch[k] !== undefined && !igual(patch[k], s[k])).map(etiqueta))];
+  if (!cambios.length) throw fallo('No hay cambios que guardar.');
+  delete patch.condiciones_fecha;
+  const b = fb.writeBatch(db);
+  b.update(ref(COL.sol, s.folio), Object.assign(patch, { condiciones_fecha: t }));
+  b.set(ref(COL.sol, s.folio, 'seguimiento', nuevoId()), { fecha: t, autor: d.solicitante, autor_tipo: 'solicitante', visible: true, estado: s.estado,
+    mensaje: 'Solicitud modificada. Cambios: ' + cambios.join(', ') + '.' });
+  await b.commit();
+  const n = await getOne(ref(COL.sol, s.folio));
+  await enviarCorreo({ plantilla: 'interno', folio: s.folio, para: [...new Set([correoOk(s.responsable_correo) ? s.responsable_correo : null].concat(await avisos('modificada')))].filter(correoOk),
+    etiqueta: 'SOLICITUD MODIFICADA', asunto: 'Modificación · ' + s.folio + ' · ' + productoNombre(n), titulo: d.solicitante + ' modificó la solicitud ' + s.folio,
+    parrafos: ['Cambios: ' + cambios.join(', ') + '.'].concat(fuera ? ['Con los cambios queda con menos de 48 horas de anticipación.'] : []),
+    datos: [['Qué envías', productoNombre(n)], ['Tipo de servicio', servicioNombre(n.forma_envio)], ['Especificaciones', n.paquetes], ['Costo', costoTexto(n)]]
+      .concat(fechasTexto(n), [['Ruta', lugarTexto(n, 'origen') + ' → ' + lugarTexto(n, 'destino')]]),
+    boton: { texto: 'Abrir en el panel', url: urlPanel(s.folio) } });
+  return vistaPublica(s.folio);
 }
 
 /* Archivos: se guardan en Firestore por partes (como los expedientes de proveedores). */
@@ -412,7 +480,7 @@ export async function archivo(folio, id) {
 }
 
 async function avisarLogistica(s, asunto, texto) {
-  const para = correoOk(s.responsable_correo) ? [s.responsable_correo] : await avisos();
+  const para = [...new Set([correoOk(s.responsable_correo) ? s.responsable_correo : null].concat(await avisos('mensaje')))].filter(correoOk);
   await enviarCorreo({ plantilla: 'interno', folio: s.folio, para, etiqueta: 'MENSAJE', asunto, titulo: asunto, parrafos: [texto],
     boton: { texto: 'Abrir en el panel', url: urlPanel(s.folio) } });
 }
@@ -448,7 +516,7 @@ let yoCache = null;
 const claveOk = (p) => String(p || '').length >= 10 && /[A-Za-z]/.test(p) && /\d/.test(p);
 const CLAVE_MSG = 'La contraseña debe tener al menos 10 caracteres, con letras y números.';
 function publico(u) {
-  return { usuario: u.id, nombre: u.nombre, correo: u.correo, rol: u.rol, activo: u.activo !== false, debe_cambiar: !!u.cambiar_clave,
+  return { usuario: u.id, nombre: u.nombre, correo: u.correo, rol: u.rol === 'operador' ? 'planeador' : u.rol, activo: u.activo !== false, debe_cambiar: !!u.cambiar_clave,
     ultimo_acceso: u.ultimo_acceso || '', pendiente: !!u.pendiente };
 }
 async function yo() {
@@ -460,7 +528,7 @@ async function yo() {
     const inv = await getOne(ref(COL.inv, String(u.email || '').toLowerCase())).catch(() => null);
     if (inv) {
       const t = ahora();
-      await fb.setDoc(ref(COL.admins, u.uid), { nombre: inv.nombre, correo: u.email.toLowerCase(), rol: inv.rol === 'admin' ? 'admin' : 'operador', activo: true,
+      await fb.setDoc(ref(COL.admins, u.uid), { nombre: inv.nombre, correo: u.email.toLowerCase(), rol: rolValido(inv.rol), activo: true,
         cambiar_clave: false, creado_en: t, ultimo_acceso: t, invitacion: u.email.toLowerCase() });
       await fb.deleteDoc(ref(COL.inv, u.email.toLowerCase())).catch(() => null);
       a = await getOne(ref(COL.admins, u.uid));
@@ -477,6 +545,11 @@ async function sesionPanel(lista) {
   return a;
 }
 function soloAdmin(a) { if (a.rol !== 'admin') throw fallo('Solo un administrador puede hacer esto.'); }
+/* Perfiles: «operador» es el nombre anterior de «planeador». */
+const rolDe = (a) => (a.rol === 'operador' ? 'planeador' : a.rol);
+const rolValido = (r) => (C.ROLES.some((x) => x[0] === r) ? r : 'planeador');
+function soloPlaneador(a) { if (!['admin', 'planeador'].includes(rolDe(a))) throw fallo('Tu perfil (Facturación) solo puede consultar y descargar las plantillas.'); }
+function soloFacturacion(a) { if (!['admin', 'facturacion'].includes(rolDe(a))) throw fallo('Solo los perfiles de Facturación o Administrador pueden hacer esto.'); }
 async function equipo() {
   return (await getAll(col(COL.admins))).filter((x) => x.activo !== false).map((x) => ({ usuario: x.id, nombre: x.nombre, correo: x.correo }))
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
@@ -539,10 +612,13 @@ export async function adminDatos() {
     dev_cumple: s.dev_cumple || '', forma_envio: servicioNombre(s.forma_envio),
     aut_correo: s.aut_correo || '', aut_enviada: s.aut_enviada || '', aut_por: s.aut_por || s.aut_gerente || '', aut_motivo: s.aut_motivo || '', paq_total: s.paq_total || '', paq_peso_kg: s.paq_peso_kg || '',
     folio_cstext: s.folio_cstext || '', categorizacion: s.categorizacion || '', responsable: s.responsable || '', transportista: s.transportista || '',
-    unidad_asignada: s.unidad_asignada || '', guia: s.guia || '', fecha_programada: s.fecha_programada || '' }))
+    unidad_asignada: s.unidad_asignada || '', guia: s.guia || '', fecha_programada: s.fecha_programada || '', cerrada: s.cerrada || '',
+    monto: s.monto || '', maniobra: s.maniobra || 'No', cst: s.cst || C.CST, facturada: s.facturada || '',
+    origen_fact: s.origen_fact || s.origen_direccion || lugarTexto(s, 'origen'), destino_fact: s.destino_fact || s.destino_direccion || lugarTexto(s, 'destino'),
+    cliente_fact: s.cliente_fact || clienteFactura(s) }))
     .sort((x, y) => String(y.creada).localeCompare(String(x.creada)));
   return { yo: publico(a), solicitudes: lista, usuarios: await equipo(), categorias: C.CATEGORIAS, transportistas: C.TRANSPORTISTAS, tipos_unidad: C.TIPOS_UNIDAD,
-    aut_estados: C.AUT_ESTADOS };
+    aut_estados: C.AUT_ESTADOS, roles: C.ROLES, alertas: C.ALERTAS, tipos: CAT.tipos };
 }
 
 export async function adminDetalle(_t, folio) {
@@ -562,9 +638,25 @@ export async function adminDetalle(_t, folio) {
 }
 
 /* cambios: {estado, mensaje, visible, notificar} y los campos de Logística. */
+/* Siguiente folio CSTEXT (CSTEXT00747…): consecutivo en sm_config/cstext; el administrador fija desde dónde sigue. */
+async function siguienteCstext() {
+  let folio = '';
+  await fb.runTransaction(db, async (tx) => {
+    const r = ref(COL.config, 'cstext'), d = await tx.get(r);
+    const n = d.exists() ? Number(d.data().siguiente) || 1 : 1;
+    folio = C.CSTEXT_PREFIJO + String(n).padStart(5, '0');
+    tx.set(r, { siguiente: n + 1, ultimo: folio, actualizado: ahora() });
+  });
+  return folio;
+}
+const montoNumero = (v) => { const t = String(v === undefined || v === null ? '' : v).replace(/[$,\s]/g, ''); return t === '' ? NaN : Number(t); };
+
 export async function adminActualizar(_t, folio, cambios) {
   const a = await sesionPanel(true);
+  soloPlaneador(a);
   cambios = cambios || {};
+  /* El folio CSTEXT es automático; solo el administrador puede corregirlo a mano. */
+  if (rolDe(a) !== 'admin') delete cambios.folio_cstext;
   const s = await getOne(ref(COL.sol, folio));
   if (!s) throw fallo('No existe la solicitud ' + folio + '.');
   const antes = s.estado, mensaje = String(cambios.mensaje || '').trim().slice(0, 2000);
@@ -583,16 +675,25 @@ export async function adminActualizar(_t, folio, cambios) {
     throw fallo('Esta solicitud requiere la autorización del Gerente de Área. Regístrala como «Autorizado» antes de programarla.');
   }
   if (cambios.categorizacion && !C.CATEGORIAS.includes(cambios.categorizacion)) throw fallo('Categorización no válida.');
+  if (cambios.monto !== undefined && String(cambios.monto).trim() !== '') {
+    const m = montoNumero(cambios.monto);
+    if (!(m >= 0 && m < 100000000)) throw fallo('Escribe el monto como número (ej. 2074.80).');
+    cambios.monto = m.toFixed(2);
+  }
+  if (cambios.tipo && !CAT.tipos.concat(C.TIPOS).some((x) => x[0] === cambios.tipo)) throw fallo('Tipo de movimiento no válido.');
   if (cambios.folio_cstext) {
     cambios.folio_cstext = String(cambios.folio_cstext).trim().toUpperCase().replace(/^(\d+)$/, 'CSTEXT$1');
     const otro = (await getAll(donde(COL.sol, 'folio_cstext', cambios.folio_cstext))).find((x) => x.folio !== folio);
     if (otro) throw fallo('El folio ' + cambios.folio_cstext + ' ya está en la solicitud ' + otro.folio + '.');
   }
   const t = ahora(), patch = { actualizada: t };
-  ['folio_cstext', 'categorizacion', 'transportista', 'unidad_asignada', 'guia', 'fecha_programada', 'aut_gerente', 'aut_comentario', 'costo_cotizado'].forEach((k) => {
+  ['folio_cstext', 'categorizacion', 'transportista', 'unidad_asignada', 'guia', 'fecha_programada', 'aut_gerente', 'aut_comentario', 'costo_cotizado',
+    'monto', 'origen_fact', 'destino_fact', 'cliente_fact', 'cst', 'tipo'].forEach((k) => {
     if (cambios[k] !== undefined) patch[k] = String(cambios[k]).trim().slice(0, k === 'aut_comentario' ? 1000 : 160);
   });
   /* Asignar la fecha a una solicitud con «Fecha abierta» sin crear una nueva. */
+  if (cambios.maniobra !== undefined) patch.maniobra = cambios.maniobra === 'Sí' ? 'Sí' : 'No';
+  ['cliente_fact', 'cst'].forEach((k) => { if (patch[k]) patch[k] = patch[k].toUpperCase(); });
   if (cambios.fecha_requerida) { patch.fecha_requerida = cambios.fecha_requerida; patch.fecha_abierta = ''; }
   if (cambios.fecha_entrega) { patch.fecha_entrega = cambios.fecha_entrega; patch.fecha_abierta = ''; }
   if (cambios.fecha_recoleccion && s.recoleccion === 'Sí') { patch.fecha_recoleccion = cambios.fecha_recoleccion; patch.recoleccion_abierta = ''; }
@@ -609,6 +710,7 @@ export async function adminActualizar(_t, folio, cambios) {
   const estado = cambios.estado || antes;
   patch.estado = estado;
   patch.cerrada = C.ABIERTOS.includes(estado) ? '' : (s.cerrada || t);
+  if (!s.folio_cstext && !patch.folio_cstext && ['programada', 'en_transito', 'completada'].includes(estado)) patch.folio_cstext = await siguienteCstext();
   const b = fb.writeBatch(db);
   b.update(ref(COL.sol, folio), patch);
   /* Si Logística registra la autorización a mano, la liga enviada por correo deja de servir. */
@@ -618,7 +720,7 @@ export async function adminActualizar(_t, folio, cambios) {
   }
   if (cambios.notas_internas !== undefined) b.set(ref(COL.sol, folio, 'interno', 'datos'), { notas_internas: String(cambios.notas_internas).slice(0, 2000), actualizado: t });
   const autCambio = patch.aut_estado !== undefined;
-  const autTexto = autCambio ? 'Autorización del Gerente de Área: ' + patch.aut_estado + '.' : '';
+  const autTexto = autCambio ? 'Autorización: ' + patch.aut_estado + '.' : '';
   if (estado !== antes || mensaje) {
     b.set(ref(COL.sol, folio, 'seguimiento', nuevoId()), { fecha: t, autor: a.nombre + ' (Logística)', autor_tipo: 'logistica',
       visible: cambios.visible !== false, estado, mensaje: mensaje || ('Estado: ' + C.ESTADOS[estado] + '.') });
@@ -631,9 +733,9 @@ export async function adminActualizar(_t, folio, cambios) {
   const n = Object.assign({}, s, patch);
   const paraSolicitante = cambios.visible !== false;
   if ((((estado !== antes || mensaje) && paraSolicitante) || autCambio) && cambios.notificar !== false) {
-    const datos = [['Estado', C.ESTADOS[estado]]].concat(autCambio ? [['Autorización del Gerente', patch.aut_estado]] : []);
+    const datos = [['Estado', C.ESTADOS[estado]]].concat(autCambio ? [['Autorización', patch.aut_estado]] : []);
     if (n.fecha_programada && ['programada', 'en_transito'].includes(estado)) {
-      datos.push(['Fecha programada', diaTexto(n.fecha_programada)]);
+      datos.push(['Fecha de carga', diaTexto(n.fecha_programada)]);
       if (n.transportista) datos.push(['Transportista', n.transportista]);
       if (n.guia) datos.push(['Guía', n.guia]);
     }
@@ -644,11 +746,34 @@ export async function adminActualizar(_t, folio, cambios) {
         .concat(estado === 'informacion' ? ['Responde desde el portal para continuar.'] : []),
       datos, boton: { texto: 'Ver mi solicitud', url: urlPortal() } });
   }
+  /* Entrega concluida: aviso a Facturación con los datos de la plantilla. */
+  if (estado === 'completada' && antes !== 'completada') {
+    await enviarCorreo({ plantilla: 'interno', folio, para: await avisos('completada'), etiqueta: 'ENTREGA CONCLUIDA',
+      asunto: folio + ' · Entrega concluida' + (n.folio_cstext ? ' · ' + n.folio_cstext : ''), titulo: 'Entrega concluida lista para facturar',
+      parrafos: ['La solicitud ' + folio + ' quedó como Completada. Ya aparece en «Facturación» para descargar la plantilla del proveedor.'],
+      datos: [['Proveedor', n.transportista || '—'], ['Consecutivo', n.folio_cstext || '—'], ['Fecha de carga', diaTexto(n.fecha_programada) || '—'],
+        ['Monto', n.monto ? '$' + Number(n.monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'],
+        ['Origen', n.origen_fact || n.origen_direccion || lugarTexto(n, 'origen')], ['Destino', n.destino_fact || n.destino_direccion || lugarTexto(n, 'destino')]],
+      boton: { texto: 'Abrir Facturación', url: urlPanel() } });
+  }
   return adminDetalle(null, folio);
+}
+
+/* ------------------------------------------------------------------ facturación */
+export async function adminMarcarFacturadas(_t, folios, facturada) {
+  const a = await sesionPanel(true);
+  soloFacturacion(a);
+  folios = [].concat(folios || []).map((f) => String(f).trim().toUpperCase()).filter((f) => /^SOL-\d+$/.test(f)).slice(0, 400);
+  if (!folios.length) throw fallo('No hay solicitudes para marcar.');
+  const t = ahora(), b = fb.writeBatch(db);
+  folios.forEach((f) => b.update(ref(COL.sol, f), { facturada: facturada === false ? '' : t.slice(0, 10), facturada_por: facturada === false ? '' : a.nombre, actualizada: t }));
+  await b.commit();
+  return adminDatos();
 }
 
 export async function adminSubirArchivo(_t, folio, arch) {
   const a = await sesionPanel(true);
+  soloPlaneador(a);
   if (!(await getOne(ref(COL.sol, folio)))) throw fallo('No existe la solicitud ' + folio + '.');
   await guardarArchivo(folio, arch, a.nombre + ' (Logística)');
   return adminDetalle(null, folio);
@@ -656,21 +781,73 @@ export async function adminSubirArchivo(_t, folio, arch) {
 
 export async function adminConfig() {
   const a = await sesionPanel(true);
-  const av = await getOne(ref(COL.config, 'avisos')).catch(() => null);
-  let usuarios = [];
-  if (a.rol === 'admin') {
+  const av = (await getOne(ref(COL.config, 'avisos')).catch(() => null)) || {};
+  const esAdmin = a.rol === 'admin';
+  let usuarios = [], cstext = null;
+  if (esAdmin) {
     usuarios = (await getAll(col(COL.admins))).map(publico)
-      .concat((await getAll(col(COL.inv))).map((i) => ({ usuario: '', nombre: i.nombre, correo: i.id, rol: i.rol, activo: true, pendiente: true, ultimo_acceso: '' })));
+      .concat((await getAll(col(COL.inv))).map((i) => ({ usuario: '', nombre: i.nombre, correo: i.id, rol: rolValido(i.rol), activo: true, pendiente: true, ultimo_acceso: '' })));
+    cstext = (await getOne(ref(COL.config, 'cstext')).catch(() => null)) || {};
   }
-  return { avisos: ((av && av.correos) || []).join(', '), usuarios, version: VERSION, url: urlPortal(), panel: urlPanel() };
+  /* Personas que reciben alertas: las guardadas o, la primera vez, la lista general con todas las alertas. */
+  const personas = (av.personas || []).length ? av.personas
+    : (av.correos || []).map((c) => ({ nombre: '', correo: c, alertas: C.ALERTAS.map((x) => x[0]) }));
+  return { avisos: (av.correos || []).join(', '), personas, alertas: C.ALERTAS, roles: C.ROLES, usuarios, version: VERSION, url: urlPortal(), panel: urlPanel(),
+    catalogos: { areas: CAT.areas, productos: CAT.productos.map((x) => x[0]).filter((x) => x !== 'Otro'), tipos: CAT.tipos.map((t) => ({ clave: t[0], nombre: t[1], descripcion: t[2] || '' })) },
+    tipos_fijos: C.TIPOS_FIJOS, cstext_siguiente: cstext ? Number(cstext.siguiente) || 1 : null, cstext_ultimo: cstext ? cstext.ultimo || '' : '' };
 }
 export async function adminGuardarAvisos(_t, texto) {
   soloAdmin(await sesionPanel(true));
   const lista = String(texto || '').split(/[\s,;]+/).filter(Boolean).map((x) => x.toLowerCase());
   const malos = lista.filter((c) => !correoOk(c));
   if (malos.length) throw fallo('Correos no válidos: ' + malos.join(', '));
-  await fb.setDoc(ref(COL.config, 'avisos'), { correos: lista });
+  await fb.setDoc(ref(COL.config, 'avisos'), { correos: lista }, { merge: true });
   return lista.join(', ');
+}
+/* Alertas por persona: [{nombre, correo, alertas: ['nueva', 'modificada', …]}]. */
+export async function adminGuardarAlertas(_t, personas) {
+  soloAdmin(await sesionPanel(true));
+  const validas = C.ALERTAS.map((x) => x[0]), vistos = new Set();
+  const lista = [].concat(personas || []).map((x) => ({ nombre: String(x.nombre || '').trim().slice(0, 120), correo: String(x.correo || '').trim().toLowerCase(),
+    alertas: [].concat(x.alertas || []).filter((y) => validas.includes(y)) })).filter((x) => x.correo);
+  const malos = lista.filter((x) => !correoOk(x.correo)).map((x) => x.correo);
+  if (malos.length) throw fallo('Correos no válidos: ' + malos.join(', '));
+  lista.forEach((x) => { if (vistos.has(x.correo)) throw fallo('El correo ' + x.correo + ' está repetido.'); vistos.add(x.correo); });
+  await fb.setDoc(ref(COL.config, 'avisos'), { personas: lista, correos: lista.map((x) => x.correo) });
+  return (await adminConfig()).personas;
+}
+/* Catálogos: áreas, «¿Qué envías?» y tipos de movimiento. */
+export async function adminGuardarCatalogos(_t, cat) {
+  soloAdmin(await sesionPanel(true));
+  cat = cat || {};
+  const limpia = (l, max) => [...new Set([].concat(l || []).map((x) => String(x || '').trim().slice(0, max)).filter(Boolean))];
+  const areas = limpia(cat.areas, 80), productos = limpia(cat.productos, 40).filter((x) => x.toLowerCase() !== 'otro');
+  if (!areas.length) throw fallo('Deja al menos un área.');
+  if (!productos.length) throw fallo('Deja al menos una opción en «¿Qué envías?».');
+  const slug = (t) => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30);
+  const tipos = [], claves = new Set();
+  [].concat(cat.tipos || []).forEach((t) => {
+    const nombre = String((t && t.nombre) || '').trim().slice(0, 60);
+    if (!nombre) return;
+    let clave = String((t && t.clave) || '').trim() || slug(nombre) || 'tipo';
+    while (claves.has(clave)) clave += '_2';
+    claves.add(clave);
+    tipos.push({ clave, nombre, descripcion: String((t && t.descripcion) || '').trim().slice(0, 120) });
+  });
+  const faltan = C.TIPOS_FIJOS.filter((k) => !claves.has(k));
+  if (faltan.length) throw fallo('No se pueden quitar estos movimientos (los usa el formulario): ' + faltan.map(tipoNombre).join(', ') + '.');
+  await fb.setDoc(ref(COL.config, 'catalogos'), { areas, productos, tipos, actualizado: ahora() });
+  aplicarCatalogos({ areas, productos, tipos });
+  return (await adminConfig()).catalogos;
+}
+/* Desde qué número sigue el folio CSTEXT (por ejemplo, 760 → CSTEXT00760). */
+export async function adminGuardarCstext(_t, siguiente) {
+  soloAdmin(await sesionPanel(true));
+  const n = Number(String(siguiente || '').replace(/\D/g, ''));
+  if (!(n >= 1 && n < 10000000)) throw fallo('Escribe el número con el que sigue el consecutivo (ej. 760).');
+  const actual = (await getOne(ref(COL.config, 'cstext')).catch(() => null)) || {};
+  await fb.setDoc(ref(COL.config, 'cstext'), { siguiente: n, ultimo: actual.ultimo || '', actualizado: ahora() });
+  return n;
 }
 /* Alta o edición de personal del panel. Si el correo ya tiene cuenta (por ejemplo, del panel de proveedores),
    queda invitado y entra con su misma contraseña. */
@@ -679,7 +856,7 @@ export async function adminGuardarUsuario(_t, datos) {
   soloAdmin(a);
   datos = datos || {};
   const nombre = String(datos.nombre || '').trim(), correo = String(datos.correo || '').trim().toLowerCase();
-  const rol = datos.rol === 'admin' ? 'admin' : 'operador';
+  const rol = rolValido(datos.rol);
   if (!nombre) throw fallo('Escribe el nombre.');
   if (datos.usuario) {
     if (datos.usuario === a.id && (datos.activo === false || rol !== 'admin')) throw fallo('No puedes quitarte el rol ni desactivarte.');
@@ -716,6 +893,7 @@ function resumenAutorizacion(s, costo) {
 }
 export async function adminEnviarAutorizacion(_t, folio, opciones) {
   const a = await sesionPanel(true);
+  soloPlaneador(a);
   opciones = opciones || {};
   const s = await getOne(ref(COL.sol, folio));
   if (!s) throw fallo('No existe la solicitud ' + folio + '.');
@@ -725,7 +903,7 @@ export async function adminEnviarAutorizacion(_t, folio, opciones) {
   const costo = String(opciones.costo !== undefined ? opciones.costo : s.costo_cotizado || '').trim().slice(0, 160);
   const t = ahora(), token = azar(32, 'abcdefghijklmnopqrstuvwxyz0123456789');
   const cotizaciones = (await getAll(col(COL.sol, folio, 'archivos'))).filter((x) => x.clase === 'cotizacion').slice(-3);
-  const notificar = [...new Set([s.correo, correoOk(s.responsable_correo) ? s.responsable_correo : null].concat(correoOk(s.responsable_correo) ? [] : await avisos()))].filter(correoOk);
+  const notificar = [...new Set([s.correo, correoOk(s.responsable_correo) ? s.responsable_correo : null].concat(await avisos('autorizacion')))].filter(correoOk);
   const motivo = s.aut_motivo || 'Autorización de costo';
   const resumenAut = resumenAutorizacion(Object.assign({}, s, { aut_motivo: motivo }), costo);
   const b = fb.writeBatch(db);
