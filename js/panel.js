@@ -1,5 +1,5 @@
 /* Panel de Logística (Liga 2): base de solicitudes. Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=12';
+import * as API from './servidor.js?v=13';
 import { libroXlsx } from './xlsx.js?v=12';
 window.API = API;
 (function () {
@@ -186,7 +186,7 @@ window.API = API;
             h('thead', null, h('tr', null, ['Folio', 'Estado', 'Producto y movimiento', 'Solicita', 'Ruta', 'Fechas', 'Responsable', 'Transportista'].map(function (t) { return h('th', null, t); }))),
             h('tbody', null, items.map(function (s) {
               var tr = h('tr', { tabindex: '0' },
-                h('td', { style: 'white-space:nowrap' }, h('b', null, s.folio), s.folio_cstext ? h('div', { class: 'sub' }, s.folio_cstext) : null,
+                h('td', { style: 'white-space:nowrap' }, h('b', null, s.folio), s.folio_cstext && s.folio_cstext !== s.folio ? h('div', { class: 'sub' }, s.folio_cstext) : null,
                   h('div', { class: 'sub' }, U.dia(s.creada))),
                 h('td', null, U.estado(cfg, s.estado), s.prioridad === 'Urgente' ? h('div', { style: 'margin-top:4px' }, h('span', { class: 'pill urgente' }, 'Urgente')) : null,
                   s.aut_estado ? h('div', { style: 'margin-top:4px' }, h('span', { class: 'pill ' + (s.aut_estado === 'Autorizado' ? 'e-completada' : s.aut_estado === 'Rechazado' ? 'e-rechazada' : 'e-en_revision') },
@@ -279,7 +279,7 @@ window.API = API;
       var cabecera = h('section', { class: 'tarjeta' },
         h('div', { class: 'cabecera' },
           h('div', null, h('div', { class: 'folio' }, s.folio), h('p', { class: 'gris chico', style: 'margin:6px 0 0' }, (s.producto ? s.producto + ' · ' : '') + s.tipo_nombre + ' · creada ' + U.dia(s.creada))),
-          h('div', { class: 'acciones' }, s.folio_cstext ? h('span', { class: 'pill e-programada' }, s.folio_cstext) : null,
+          h('div', { class: 'acciones' }, s.folio_cstext && s.folio_cstext !== s.folio ? h('span', { class: 'pill e-programada' }, s.folio_cstext) : null,
             U.estado(cfg, s.estado), s.prioridad === 'Urgente' ? h('span', { class: 'pill urgente' }, 'Urgente') : null)),
         U.pasos(cfg, s.estado),
         h('div', { style: 'height:12px' }),
@@ -302,7 +302,7 @@ window.API = API;
       var estado = lista(Object.keys(cfg.estados).map(function (k) { return [k, cfg.estados[k]]; }), s.estado);
       var resp = lista([['', 'Sin asignar']].concat(datos.usuarios.map(function (u) { return [u.usuario, u.nombre]; })), s.responsable);
       /* El folio CSTEXT se asigna solo al programar; solo el administrador lo corrige. */
-      var cstext = h('input', { class: 'entrada', value: s.folio_cstext || '', maxlength: 20, disabled: !esAdmin, placeholder: 'Se asigna al programar' });
+      var cstext = h('input', { class: 'entrada', value: s.folio_cstext || '', maxlength: 20, disabled: !esAdmin, placeholder: 'Es el folio de la solicitud' });
       var monto = h('input', { class: 'entrada', inputmode: 'decimal', value: s.monto ? Number(s.monto).toFixed(2) : '', placeholder: '0.00' });
       var tipoMov = lista(datos.tipos.map(function (t) { return [t[0], t[1]]; }), s.tipo);
       var oFact = h('input', { class: 'entrada', value: s.origen_fact || '', maxlength: 160, placeholder: s.origen_direccion || 'Ej. CALERA' });
@@ -342,7 +342,7 @@ window.API = API;
           campo('Origen', oFact), campo('Destino', dFact), campo('Cliente', cliFact), campo('Requiere factura de maniobra', maniobra), campo('CST', cstCampo),
           campo('Notas internas (no las ve quien solicita)', notas, 'todo'),
           campo('Mensaje', mensaje, 'todo'), catalogos),
-        h('p', { class: 'gris chico' }, 'El monto, la fecha de carga y los datos de la plantilla alimentan la vista de Facturación. El folio CSTEXT se asigna solo al programar.'),
+        h('p', { class: 'gris chico' }, 'El monto, la fecha de carga y los datos de la plantilla alimentan la vista de Facturación. El folio de la solicitud es su consecutivo CSTEXT.'),
         h('div', { style: 'margin:10px 0 14px;display:grid;gap:6px' },
           h('label', { class: 'chico' }, visible, ' El mensaje lo ve quien solicita (si no, queda como nota interna)'),
           h('label', { class: 'chico' }, avisar, ' Avisar por correo a ' + s.correo)),
@@ -484,12 +484,13 @@ window.API = API;
               h('div', { class: 'acciones' }, bajar, marcar)),
             faltan ? h('div', { class: 'aviso aviso-alerta', style: 'margin:12px 0 0' }, h('p', null, faltan + (faltan === 1 ? ' entrega no tiene' : ' entregas no tienen') + ' monto o consecutivo. Pide al planeador que los capture antes de facturar.')) : null,
             h('div', { class: 'tabla-caja', style: 'margin-top:12px' }, h('table', { class: 'tabla-fact' },
-              h('thead', null, h('tr', null, COLS_FACT.map(function (c) { return h('th', null, c[0]); }).concat([h('th', null, 'FOLIO')]))),
+              h('thead', null, h('tr', null, COLS_FACT.map(function (c) { return h('th', null, c[0]); }).concat([h('th', null, 'FACTURADA')]))),
               h('tbody', null, g.items.map(function (s) {
                 var tr = h('tr', { tabindex: '0' }, COLS_FACT.map(function (c) {
                   var v = c[3](s);
                   return h('td', { class: c[1] === 'moneda' ? 'celda-monto' : c[1] === 'izq' ? '' : 'centro' }, c[1] === 'moneda' ? dinero(v) : c[1] === 'fecha' ? diaCorto(v) : v);
-                }).concat([h('td', { class: 'centro', style: 'white-space:nowrap' }, s.folio, s.facturada ? h('div', { class: 'sub' }, 'Facturada ' + U.dia(s.facturada)) : null)]));
+                }).concat([h('td', { class: 'centro', style: 'white-space:nowrap' }, s.facturada ? U.dia(s.facturada) : h('span', { class: 'gris' }, 'Pendiente'),
+                  s.folio !== s.folio_cstext ? h('div', { class: 'sub' }, s.folio) : null)]));
                 tr.addEventListener('click', function () { detalle(s.folio); });
                 return tr;
               })))));
@@ -573,8 +574,8 @@ window.API = API;
         run('adminGuardarCstext', n.value).then(function () { U.ocupado(guardar, false); U.toast('Consecutivo guardado.'); })
           .catch(function (e) { U.ocupado(guardar, false); fallo(e); });
       });
-      return h('section', { class: 'tarjeta' }, h('h2', null, 'Folio CSTEXT automático'),
-        h('p', { class: 'gris chico' }, 'Se asigna solo cuando el planeador pasa una solicitud a Programada (o después). ' + (c.cstext_ultimo ? 'Último asignado: ' + c.cstext_ultimo + '.' : 'Aún no se ha asignado ninguno.')),
+      return h('section', { class: 'tarjeta' }, h('h2', null, 'Folio de solicitudes (CSTEXT)'),
+        h('p', { class: 'gris chico' }, 'Cada solicitud nueva recibe su folio CSTEXT al enviarse (es el mismo consecutivo de la plantilla de facturación). ' + (c.cstext_ultimo ? 'Último asignado: ' + c.cstext_ultimo + '.' : 'Aún no se ha asignado ninguno.')),
         campo('Siguiente número', n), vista, guardar);
     }
 

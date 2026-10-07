@@ -385,9 +385,10 @@ export async function crearSolicitud(datos, cuenta) {
   await fb.runTransaction(db, async (tx) => {
     const cref = ref(COL.config, 'folio'), cs = await tx.get(cref);
     const n = (cs.exists() ? Number(cs.data().n) || 0 : 0) + 1;
-    folio = 'SOL-' + String(n).padStart(4, '0');
+    /* El folio de la solicitud es su consecutivo CSTEXT (CSTEXT00760…); el administrador fija desde dónde sigue. */
+    folio = folioCstext(n);
     if (cs.exists()) tx.update(cref, { n, ultimo: folio }); else tx.set(cref, { n, ultimo: folio });
-    tx.set(ref(COL.sol, folio), Object.assign({}, d, derivados, { folio, n, uid, estado: 'recibida', creada: t, actualizada: t, cerrada: '', condiciones_fecha: t }));
+    tx.set(ref(COL.sol, folio), Object.assign({}, d, derivados, { folio, folio_cstext: folio, n, uid, estado: 'recibida', creada: t, actualizada: t, cerrada: '', condiciones_fecha: t }));
     tx.set(ref(COL.sol, folio, 'seguimiento', nuevoId()), { fecha: t, autor: d.solicitante, autor_tipo: 'solicitante', visible: true, estado: 'recibida', mensaje: 'Solicitud creada.' });
   });
   const sol = await getOne(ref(COL.sol, folio));
@@ -638,17 +639,7 @@ export async function adminDetalle(_t, folio) {
 }
 
 /* cambios: {estado, mensaje, visible, notificar} y los campos de Logística. */
-/* Siguiente folio CSTEXT (CSTEXT00747…): consecutivo en sm_config/cstext; el administrador fija desde dónde sigue. */
-async function siguienteCstext() {
-  let folio = '';
-  await fb.runTransaction(db, async (tx) => {
-    const r = ref(COL.config, 'cstext'), d = await tx.get(r);
-    const n = d.exists() ? Number(d.data().siguiente) || 1 : 1;
-    folio = C.CSTEXT_PREFIJO + String(n).padStart(5, '0');
-    tx.set(r, { siguiente: n + 1, ultimo: folio, actualizado: ahora() });
-  });
-  return folio;
-}
+const folioCstext = (n) => C.CSTEXT_PREFIJO + String(n).padStart(5, '0');
 const montoNumero = (v) => { const t = String(v === undefined || v === null ? '' : v).replace(/[$,\s]/g, ''); return t === '' ? NaN : Number(t); };
 
 export async function adminActualizar(_t, folio, cambios) {
@@ -710,7 +701,6 @@ export async function adminActualizar(_t, folio, cambios) {
   const estado = cambios.estado || antes;
   patch.estado = estado;
   patch.cerrada = C.ABIERTOS.includes(estado) ? '' : (s.cerrada || t);
-  if (!s.folio_cstext && !patch.folio_cstext && ['programada', 'en_transito', 'completada'].includes(estado)) patch.folio_cstext = await siguienteCstext();
   const b = fb.writeBatch(db);
   b.update(ref(COL.sol, folio), patch);
   /* Si Logística registra la autorización a mano, la liga enviada por correo deja de servir. */
@@ -749,7 +739,7 @@ export async function adminActualizar(_t, folio, cambios) {
   /* Entrega concluida: aviso a Facturación con los datos de la plantilla. */
   if (estado === 'completada' && antes !== 'completada') {
     await enviarCorreo({ plantilla: 'interno', folio, para: await avisos('completada'), etiqueta: 'ENTREGA CONCLUIDA',
-      asunto: folio + ' · Entrega concluida' + (n.folio_cstext ? ' · ' + n.folio_cstext : ''), titulo: 'Entrega concluida lista para facturar',
+      asunto: folio + ' · Entrega concluida' + (n.folio_cstext && n.folio_cstext !== folio ? ' · ' + n.folio_cstext : ''), titulo: 'Entrega concluida lista para facturar',
       parrafos: ['La solicitud ' + folio + ' quedó como Completada. Ya aparece en «Facturación» para descargar la plantilla del proveedor.'],
       datos: [['Proveedor', n.transportista || '—'], ['Consecutivo', n.folio_cstext || '—'], ['Fecha de carga', diaTexto(n.fecha_programada) || '—'],
         ['Monto', n.monto ? '$' + Number(n.monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'],
@@ -763,7 +753,7 @@ export async function adminActualizar(_t, folio, cambios) {
 export async function adminMarcarFacturadas(_t, folios, facturada) {
   const a = await sesionPanel(true);
   soloFacturacion(a);
-  folios = [].concat(folios || []).map((f) => String(f).trim().toUpperCase()).filter((f) => /^SOL-\d+$/.test(f)).slice(0, 400);
+  folios = [].concat(folios || []).map((f) => String(f).trim().toUpperCase()).filter((f) => /^(SOL-|CSTEXT)\d+$/.test(f)).slice(0, 400);
   if (!folios.length) throw fallo('No hay solicitudes para marcar.');
   const t = ahora(), b = fb.writeBatch(db);
   folios.forEach((f) => b.update(ref(COL.sol, f), { facturada: facturada === false ? '' : t.slice(0, 10), facturada_por: facturada === false ? '' : a.nombre, actualizada: t }));
@@ -787,14 +777,14 @@ export async function adminConfig() {
   if (esAdmin) {
     usuarios = (await getAll(col(COL.admins))).map(publico)
       .concat((await getAll(col(COL.inv))).map((i) => ({ usuario: '', nombre: i.nombre, correo: i.id, rol: rolValido(i.rol), activo: true, pendiente: true, ultimo_acceso: '' })));
-    cstext = (await getOne(ref(COL.config, 'cstext')).catch(() => null)) || {};
+    cstext = (await getOne(ref(COL.config, 'folio')).catch(() => null)) || {};
   }
   /* Personas que reciben alertas: las guardadas o, la primera vez, la lista general con todas las alertas. */
   const personas = (av.personas || []).length ? av.personas
     : (av.correos || []).map((c) => ({ nombre: '', correo: c, alertas: C.ALERTAS.map((x) => x[0]) }));
   return { avisos: (av.correos || []).join(', '), personas, alertas: C.ALERTAS, roles: C.ROLES, usuarios, version: VERSION, url: urlPortal(), panel: urlPanel(),
     catalogos: { areas: CAT.areas, productos: CAT.productos.map((x) => x[0]).filter((x) => x !== 'Otro'), tipos: CAT.tipos.map((t) => ({ clave: t[0], nombre: t[1], descripcion: t[2] || '' })) },
-    tipos_fijos: C.TIPOS_FIJOS, cstext_siguiente: cstext ? Number(cstext.siguiente) || 1 : null, cstext_ultimo: cstext ? cstext.ultimo || '' : '' };
+    tipos_fijos: C.TIPOS_FIJOS, cstext_siguiente: cstext ? (Number(cstext.n) || 0) + 1 : null, cstext_ultimo: cstext ? cstext.ultimo || '' : '' };
 }
 export async function adminGuardarAvisos(_t, texto) {
   soloAdmin(await sesionPanel(true));
@@ -845,8 +835,10 @@ export async function adminGuardarCstext(_t, siguiente) {
   soloAdmin(await sesionPanel(true));
   const n = Number(String(siguiente || '').replace(/\D/g, ''));
   if (!(n >= 1 && n < 10000000)) throw fallo('Escribe el número con el que sigue el consecutivo (ej. 760).');
-  const actual = (await getOne(ref(COL.config, 'cstext')).catch(() => null)) || {};
-  await fb.setDoc(ref(COL.config, 'cstext'), { siguiente: n, ultimo: actual.ultimo || '', actualizado: ahora() });
+  if (await getOne(ref(COL.sol, folioCstext(n))).catch(() => null)) throw fallo('El folio ' + folioCstext(n) + ' ya existe. Escribe un número mayor.');
+  const actual = (await getOne(ref(COL.config, 'folio')).catch(() => null)) || {};
+  /* sm_config/folio guarda el último número usado: la siguiente solicitud toma n + 1. */
+  await fb.setDoc(ref(COL.config, 'folio'), { n: n - 1, ultimo: actual.ultimo || '' });
   return n;
 }
 /* Alta o edición de personal del panel. Si el correo ya tiene cuenta (por ejemplo, del panel de proveedores),

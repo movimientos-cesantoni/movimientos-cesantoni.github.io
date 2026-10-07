@@ -36,7 +36,7 @@ responder una vez y con el token vigente; al reenviar o registrar a mano, la lig
 | Perfil | Qué hace |
 |---|---|
 | Administrador | Todo: solicitudes, facturación y configuración (personal, alertas por persona, catálogos y consecutivo CSTEXT). |
-| Planeador | Fecha de carga, estatus, monto, datos de la plantilla y autorizaciones. El folio CSTEXT se asigna solo al pasar a Programada. |
+| Planeador | Fecha de carga, estatus, monto, datos de la plantilla y autorizaciones. |
 | Facturación | Plantillas de entregas Completadas por proveedor (Excel), y las marca como facturadas. No puede cambiar solicitudes. |
 
 ## Modificaciones de quien solicita
@@ -46,3 +46,9 @@ está «Recibida» y sin autorización enviada; después se muestra la leyenda d
 «Avisar a Logística por correo». Cada modificación avisa a quien tenga activada la alerta «Solicitud modificada».
 
 Pruebas: `tests/solicitudes-web/e2e.mjs` (repositorio privado) con el emulador de Firebase: 141 de 141 correctas.
+
+## Folio
+
+Cada solicitud nueva recibe como folio su consecutivo CSTEXT (CSTEXT00760, CSTEXT00761…), que también es el CONSECUTIVO de la plantilla
+de facturación. El administrador fija desde qué número sigue en Configuración › Folio de solicitudes (se guarda en `sm_config/folio`).
+Los folios anteriores (SOL-0001…) se conservan.

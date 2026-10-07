@@ -1,5 +1,5 @@
 /* Formulario y seguimiento de solicitudes (Liga 1). Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=12';
+import * as API from './servidor.js?v=13';
 window.API = API;
 (function () {
     'use strict';
@@ -67,7 +67,7 @@ window.API = API;
 
     /* «Modificar una solicitud»: con el folio (y correo + clave si no hay sesión) abre el formulario con sus datos. */
     function buscadorModificar() {
-      var folio = h('input', { class: 'entrada', id: 'm-folio', placeholder: 'SOL-0001', autocomplete: 'off', style: 'text-transform:uppercase' });
+      var folio = h('input', { class: 'entrada', id: 'm-folio', placeholder: 'CSTEXT00760', autocomplete: 'off', style: 'text-transform:uppercase' });
       var correo = cfg.sesion ? null : h('input', { class: 'entrada', id: 'm-correo', type: 'email', autocomplete: 'email', value: recordado().correo || '' });
       var clave = cfg.sesion ? null : h('input', { class: 'entrada', id: 'm-clave', type: 'password', autocomplete: 'current-password', placeholder: 'XXXX-XXXX' });
       var err = h('p', { class: 'chico', style: 'color:var(--mal)', role: 'alert', hidden: true });
@@ -80,12 +80,14 @@ window.API = API;
         err, btn);
       f.addEventListener('submit', function (ev) {
         ev.preventDefault(); err.hidden = true;
-        var n = folio.value.trim().toUpperCase().replace(/^SOL-?/, '').replace(/\D/g, '');
-        if (!n) { err.textContent = 'Escribe el folio (por ejemplo, SOL-0001).'; err.hidden = false; return; }
+        /* Acepta «CSTEXT00760», «760» o los folios anteriores «SOL-0001». */
+        var t = folio.value.trim().toUpperCase(), n = t.replace(/\D/g, '');
+        if (!n) { err.textContent = 'Escribe el folio (por ejemplo, CSTEXT00760).'; err.hidden = false; return; }
+        var buscado = /^SOL/.test(t) ? 'SOL-' + n.padStart(4, '0') : 'CSTEXT' + n.padStart(5, '0');
         if (!cfg.sesion && (!correo.value.trim() || !clave.value.trim())) { err.textContent = 'Escribe tu correo y tu clave.'; err.hidden = false; return; }
         U.ocupado(btn, true, 'Buscando…');
         (cfg.sesion ? Promise.resolve() : run('entrarSolicitante', correo.value.trim(), clave.value).then(function (r) { cfg.sesion = r; }))
-          .then(function () { return abrirModificacion('SOL-' + n.padStart(4, '0')); })
+          .then(function () { return abrirModificacion(buscado); })
           .catch(function (e) { U.ocupado(btn, false); err.textContent = e.message; err.hidden = false; });
       });
       return f;
