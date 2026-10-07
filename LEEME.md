@@ -20,7 +20,7 @@ En Firebase › Authentication › Settings › Authorized domains debe estar `m
    con peso total automático. Un renglón por grupo de piezas iguales.
 6. Devolución (solo en devoluciones): motivo, fotos y checklist.
 7. ¿Quién absorbe el costo? CESANTONI (pide el correo de quien autoriza), Cliente, Proveedor u Otro.
-8. Documentación del servicio: cotización, correo de cotización, autorización adicional, salida, folio, factura y otros archivos.
+8. Documentación del servicio: cotización, correo de cotización, autorización adicional y salida (tres bloques).
 9. Fechas tentativas de recolección y entrega (o fecha abierta), casilla «El material regresa después», leyenda de condiciones y aviso de 48 horas.
 10. Confirmación: resumen con «Editar», casilla «He leído y acepto las condiciones» y «Enviar solicitud».
 

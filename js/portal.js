@@ -166,7 +166,7 @@ window.API = API;
       /* Selector de archivos con lista para quitar antes de enviar. */
       function selector(key, label, lista, accept, opts) {
         var ul = h('ul', { class: 'archivos' });
-        var input = h('input', { type: 'file', multiple: true, accept: accept, class: 'entrada' });
+        var input = h('input', { type: 'file', multiple: true, accept: accept, class: opts && opts.boton ? 'archivo-oculto' : 'entrada' });
         function pintar() {
           mount(ul, lista.map(function (f, i) {
             return h('li', null, h('span', null, f.name, h('span', { class: 'gris' }, ' · ' + U.tamano(f.size))),
@@ -180,7 +180,8 @@ window.API = API;
           });
           if (input.files && input.files.length) { input.value = ''; pintar(); }
         });
-        var wrap = campo(key, label, h('div', null, input, ul), Object.assign({ todo: true }, opts));
+        var control = opts && opts.boton ? h('div', null, h('label', { class: 'btn btn-chico btn-adjuntar' }, '📎 ' + opts.boton, input), ul) : h('div', null, input, ul);
+        var wrap = campo(key, label, control, Object.assign({ todo: true }, opts));
         campos[key].archivos = lista;
         return wrap;
       }
@@ -339,19 +340,15 @@ window.API = API;
       var pasoDocs = h('div', { class: 'paso' },
         h('section', { class: 'tarjeta' }, h('h2', null, 'Documentación del servicio'),
           h('p', { class: 'gris chico' }, 'Todo queda en el mismo folio: solicitud → cotización → autorización → salida. Si aún no tienes algún documento, lo agregas después desde «Mis solicitudes».'),
-          h('div', { class: 'rejilla' },
-            h('h3', { class: 'todo' }, 'Cotización'),
-            selector('cotizacion', 'Adjuntar cotización', cotizaciones, ARCHIVOS, { ayuda: 'Opcional. PDF, imagen, Excel o Word de hasta ' + cfg.max_mb + ' MB.' }),
-            selector('cotizacion_correo', 'Adjuntar correo de cotización', correosCotizacion, ARCHIVOS, { ayuda: 'Opcional. Correo exportado (.eml o .msg), PDF o captura.' }),
-            h('h3', { class: 'todo' }, 'Autorización'),
-            infoAutDoc,
-            selector('autorizacion', 'Autorización adicional (documento externo)', autorizaciones, ARCHIVOS, { ayuda: 'Opcional.' }),
-            h('h3', { class: 'todo' }, 'Salida'),
-            selector('salida', 'Documento de salida', salidas, ARCHIVOS, { ayuda: 'Opcional. Cárgalo cuando ya esté disponible; también puedes agregarlo después.' }),
-            h('h3', { class: 'todo' }, 'Otros datos y archivos'),
-            texto('referencia', 'Folio', { max: 120, ayuda: 'Opcional. Folio del pedido, remisión o nota de crédito.' }),
-            texto('cliente', 'Factura', { max: 160, ayuda: 'Opcional.' }),
-            selector('archivos', 'Otros archivos (fotos, croquis, instrucciones)', generales, ARCHIVOS, { ayuda: 'Opcional. Hasta ' + cfg.max_mb + ' MB cada uno.' }))));
+          h('div', { class: 'docs' },
+            h('div', { class: 'doc-bloque' }, h('h3', null, 'Cotización'),
+              selector('cotizacion', null, cotizaciones, ARCHIVOS, { boton: 'Adjuntar cotización' }),
+              selector('cotizacion_correo', 'Correo de cotización', correosCotizacion, ARCHIVOS, { boton: 'Adjuntar correo', ayuda: '.eml, .msg, PDF o captura' })),
+            h('div', { class: 'doc-bloque' }, h('h3', null, 'Autorización'), infoAutDoc,
+              selector('autorizacion', 'Documento externo', autorizaciones, ARCHIVOS, { boton: 'Adjuntar autorización' })),
+            h('div', { class: 'doc-bloque' }, h('h3', null, 'Salida'),
+              selector('salida', null, salidas, ARCHIVOS, { boton: 'Adjuntar salida', ayuda: 'Si aún no la tienes, la agregas después.' }))),
+          h('p', { class: 'gris chico centro', style: 'margin:14px 0 0' }, 'Todos son opcionales · PDF, imagen, Excel, Word o correo de hasta ' + cfg.max_mb + ' MB.')));
 
       /* ---------- 8 · Fechas tentativas y condiciones */
       var aviso48 = h('div', { class: 'aviso aviso-mal todo', role: 'alert' },
