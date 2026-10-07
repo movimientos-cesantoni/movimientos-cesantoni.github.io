@@ -57,6 +57,15 @@ Panel: Solicitudes (5 contadores y filtro «Ver»), Facturación, Gastos (gasto 
 El planeador indica en cada solicitud si el cargo es Flete o Maniobras. En Facturación, las plantillas de cada proveedor se separan por
 concepto; si salen varias, se descargan en un ZIP con las carpetas «Fletes» y «Maniobras» («Descargar todas (ZIP)» junta a todos los proveedores).
 
+## Formato de movimiento (plantilla de Excel)
+
+El administrador sube `PLANTILLA_MOVIMIENTOS_EXT.xlsx` en Configuración › Plantilla de movimientos. Se guarda en Firestore
+(`sm_config/plantilla` y `sm_config/plantilla_archivo`), no en este sitio público, porque trae nombres de transportistas.
+Con la plantilla cargada, Facturación descarga un formato por movimiento (`Fletes/PROVEEDOR/CSTEXT00760.xlsx`), con fecha, origen,
+destino, folio, subtotal, transportista, tipo y observaciones llenos; las fórmulas de IVA, retenciones y total se recalculan al abrir
+en Excel. La lista de transportistas del panel sale de la tabla «RAZON SOCIAL TRANSPORTISTA» de la plantilla. Sin plantilla se descarga
+la tabla por proveedor de antes.
+
 ## Folio
 
 Cada solicitud nueva recibe como folio su consecutivo CSTEXT (CSTEXT00760, CSTEXT00761…), que también es el CONSECUTIVO de la plantilla
