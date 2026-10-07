@@ -214,6 +214,16 @@ window.U = (function () {
       }));
   }
 
+  /* Menú lateral: items [{clave, icono, titulo, ayuda, accion}], la opción activa y un pie (usuario y «Salir»).
+     Cada botón se llama como su título; la ayuda corta solo orienta a quien es nuevo. */
+  function menu(destino, items, activa, pie) {
+    mount(destino, h('p', { class: 'lateral-titulo' }, 'Menú'), items.map(function (i) {
+      return h('button', { type: 'button', class: 'lateral-item', 'aria-label': i.titulo, 'aria-current': activa === i.clave ? 'page' : null, onclick: i.accion },
+        h('span', { class: 'lateral-icono', 'aria-hidden': 'true' }, i.icono),
+        h('span', { class: 'lateral-texto' }, h('b', null, i.titulo), i.ayuda ? h('small', null, i.ayuda) : null));
+    }), pie ? h('div', { class: 'lateral-pie' }, pie) : null);
+  }
+
   /* Archivos: los enlaces «#archivo:FOLIO:ID» se abren armando el archivo desde la base. */
   document.addEventListener('click', function (ev) {
     var a = ev.target.closest && ev.target.closest('a[href^="#archivo:"], a[href^="#autorizacion:"]');
@@ -231,6 +241,6 @@ window.U = (function () {
     }).catch(function (e) { if (ventana) ventana.close(); toast(e.message, true); });
   });
 
-  return { h: h, mount: mount, devolucion: devolucion, paquetes: paquetes, fechas: fechas, articulos: articulos, detalle: detalle, autorizacion: autorizacion, expediente: expediente, run: run, leerArchivo: leerArchivo, toast: toast, ocupado: ocupado, dia: dia,
+  return { h: h, mount: mount, devolucion: devolucion, paquetes: paquetes, fechas: fechas, articulos: articulos, detalle: detalle, autorizacion: autorizacion, expediente: expediente, menu: menu, run: run, leerArchivo: leerArchivo, toast: toast, ocupado: ocupado, dia: dia,
     fechaHora: fechaHora, tamano: tamano, estado: estado, logos: logos, pasos: pasos };
 })();

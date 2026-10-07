@@ -47,11 +47,12 @@ const nombreHoja = (n, i) => (String(n || 'Hoja ' + (i + 1)).replace(/[\[\]:*?/\
 /* ---- ZIP sin compresión (método «store») */
 const TABLA = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
 function crc32(b) { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = TABLA[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
-function zip(archivos) {
+/* archivos: [{ nombre: 'carpeta/archivo.ext', contenido: texto } o { nombre, bytes: Uint8Array }] → bytes del ZIP. */
+function zipBytes(archivos) {
   const enc = new TextEncoder(), partes = [], central = [];
   let offset = 0;
   archivos.forEach((a) => {
-    const nombre = enc.encode(a.nombre), datos = enc.encode(a.contenido), crc = crc32(datos);
+    const nombre = enc.encode(a.nombre), datos = a.bytes || enc.encode(a.contenido), crc = crc32(datos);
     const local = new DataView(new ArrayBuffer(30));
     local.setUint32(0, 0x04034b50, true); local.setUint16(4, 20, true); local.setUint16(6, 0x0800, true); local.setUint16(8, 0, true);
     local.setUint16(10, 0, true); local.setUint16(12, 0x21, true); local.setUint32(14, crc, true);
@@ -67,10 +68,17 @@ function zip(archivos) {
   const tam = central.reduce((t, x) => t + x.length, 0), fin = new DataView(new ArrayBuffer(22));
   fin.setUint32(0, 0x06054b50, true); fin.setUint16(8, archivos.length, true); fin.setUint16(10, archivos.length, true);
   fin.setUint32(12, tam, true); fin.setUint32(16, offset, true);
-  return new Blob(partes.concat(central, [new Uint8Array(fin.buffer)]), { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const todo = partes.concat(central, [new Uint8Array(fin.buffer)]), out = new Uint8Array(todo.reduce((t, x) => t + x.length, 0));
+  let i = 0;
+  todo.forEach((x) => { out.set(x, i); i += x.length; });
+  return out;
 }
+const TIPO_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+/* ZIP con varias plantillas, cada una en su carpeta (por ejemplo, «Fletes/» y «Maniobras/»). */
+export function zipArchivos(archivos) { return new Blob([zipBytes(archivos)], { type: 'application/zip' }); }
 
-export function libroXlsx(hojas) {
+export function libroXlsx(hojas) { return new Blob([libroBytes(hojas)], { type: TIPO_XLSX }); }
+export function libroBytes(hojas) {
   const nombres = [];
   hojas.forEach((h, i) => { let n = nombreHoja(h.nombre, i), k = 2; while (nombres.includes(n)) n = n.slice(0, 28) + ' ' + k++; nombres.push(n); });
   const archivos = [
@@ -88,5 +96,5 @@ export function libroXlsx(hojas) {
       '<Relationship Id="rId' + (hojas.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
     { nombre: 'xl/styles.xml', contenido: ESTILOS }
   ].concat(hojas.map((h, i) => ({ nombre: 'xl/worksheets/sheet' + (i + 1) + '.xml', contenido: hojaXml(h) })));
-  return zip(archivos);
+  return zipBytes(archivos);
 }

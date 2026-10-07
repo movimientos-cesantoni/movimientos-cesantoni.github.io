@@ -1,6 +1,6 @@
 /* Panel de Logística (Liga 2): base de solicitudes. Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=13';
-import { libroXlsx } from './xlsx.js?v=12';
+import * as API from './servidor.js?v=15';
+import { libroXlsx, libroBytes, zipArchivos } from './xlsx.js?v=15';
 window.API = API;
 (function () {
     'use strict';
@@ -50,18 +50,23 @@ window.API = API;
       }).catch(function (e) { mount(main, h('div', { class: 'aviso aviso-mal' }, h('p', null, e.message))); });
     }
 
+    /* Menú lateral según el perfil. Cada opción explica en una línea para qué sirve. */
     function nav(activa) {
+      var destino = document.getElementById('nav');
+      if (!yo || yo.debe_cambiar) { mount(destino); destino.hidden = true; return; }
+      destino.hidden = false;
       var items = [];
-      if (yo && !yo.debe_cambiar) {
-        if (yo.rol !== 'facturacion') items.push(['solicitudes', 'Solicitudes']);
-        if (yo.rol !== 'planeador') items.push(['facturacion', 'Facturación']);
-        items.push(['config', 'Configuración']);
-      }
-      mount(document.getElementById('nav'), items.map(function (i) {
-        return h('button', { type: 'button', 'aria-current': activa === i[0] ? 'page' : null, onclick: function () {
-          if (i[0] === 'config') configuracion(); else if (i[0] === 'facturacion') cargar().then(facturacion); else cargar().then(tablero);
-        } }, i[1]);
-      }), yo ? h('button', { type: 'button', onclick: salir }, 'Salir (' + yo.nombre + ')') : null);
+      if (yo.rol !== 'facturacion') items.push({ clave: 'solicitudes', icono: '📋', titulo: 'Solicitudes', ayuda: 'Ver y atender los pedidos', accion: function () { cargar().then(tablero); } });
+      if (yo.rol !== 'planeador') items.push({ clave: 'facturacion', icono: '🧾', titulo: 'Facturación', ayuda: 'Plantillas por proveedor', accion: function () { cargar().then(facturacion); } });
+      items.push({ clave: 'gastos', icono: '📊', titulo: 'Gastos', ayuda: 'Cuánto gasta cada departamento', accion: function () { cargar().then(gastos); } });
+      items.push({ clave: 'config', icono: '⚙️', titulo: 'Configuración', ayuda: yo.rol === 'admin' ? 'Personal, alertas y catálogos' : 'Mi cuenta y contraseña', accion: configuracion });
+      U.menu(destino, items, activa, [h('div', { class: 'lateral-usuario' }, h('b', null, yo.nombre), h('span', null, rolNombre(yo.rol))),
+        h('button', { type: 'button', class: 'btn btn-chico', onclick: salir }, 'Salir')]);
+    }
+    /* Encabezado de cada pantalla: título y una línea que dice qué hacer aquí. */
+    function encabezado(titulo, ayuda, acciones) {
+      return h('div', { class: 'cabecera', style: 'margin-bottom:16px' }, h('div', null, h('h1', { style: 'margin:0' }, titulo),
+        ayuda ? h('p', { class: 'ayuda-pantalla' }, ayuda) : null), acciones ? h('div', { class: 'acciones' }, acciones) : null);
     }
 
     function login() {
@@ -147,6 +152,7 @@ window.API = API;
       ['abiertas', 'Abiertas', function (s) { return cfg.abiertos.indexOf(s.estado) >= 0; }],
       ['nuevas', 'Nuevas sin revisar', function (s) { return s.estado === 'recibida'; }],
       ['urgentes', 'Urgentes abiertas', function (s) { return s.prioridad === 'Urgente' && cfg.abiertos.indexOf(s.estado) >= 0; }],
+      ['por_autorizar', 'Por autorizar', function (s) { return s.aut_estado === 'Pendiente de autorización' && cfg.abiertos.indexOf(s.estado) >= 0; }],
       ['por_enviar', 'Por enviar a autorización', function (s) { return s.aut_estado === 'Pendiente de autorización' && !s.aut_enviada && cfg.abiertos.indexOf(s.estado) >= 0; }],
       ['autorizacion', 'Esperando autorización', function (s) { return s.aut_estado === 'Pendiente de autorización' && !!s.aut_enviada && cfg.abiertos.indexOf(s.estado) >= 0; }],
       ['fecha_abierta', 'Con fecha abierta', function (s) { return s.fecha_abierta === 'Sí' && cfg.abiertos.indexOf(s.estado) >= 0; }],
@@ -157,16 +163,18 @@ window.API = API;
       ['todas', 'Todas', function () { return true; }]
     ];
 
+    var corto = function (t) { t = String(t || ''); return t.length > 42 ? t.slice(0, 40).trim() + '…' : t; };
     function tablero() {
       nav('solicitudes');
       if (!datos) { mount(main, h('p', { class: 'gris' }, 'Cargando…')); return; }
       var tabla = h('div');
       var kpis = h('div', { class: 'kpis' });
       function pintarKpis() {
-        mount(kpis, VISTAS.slice(0, -1).map(function (v) {
+        /* Solo los 5 contadores principales; las demás vistas están en el filtro «Ver». */
+        mount(kpis, VISTAS.filter(function (v) { return ['abiertas', 'nuevas', 'urgentes', 'por_autorizar', 'cerradas'].indexOf(v[0]) >= 0; }).map(function (v) {
           var n = datos.solicitudes.filter(v[2]).length;
           return h('button', { type: 'button', class: 'kpi', 'aria-pressed': String(filtros.vista === v[0]),
-            onclick: function () { filtros.vista = filtros.vista === v[0] ? 'todas' : v[0]; pintarKpis(); pintar(); } }, h('b', null, String(n)), h('span', null, v[1]));
+            onclick: function () { filtros.vista = filtros.vista === v[0] ? 'todas' : v[0]; vistaSel.value = filtros.vista; pintarKpis(); pintar(); } }, h('b', null, String(n)), h('span', null, v[1]));
         }));
       }
       function filtradas() {
@@ -190,14 +198,14 @@ window.API = API;
                   h('div', { class: 'sub' }, U.dia(s.creada))),
                 h('td', null, U.estado(cfg, s.estado), s.prioridad === 'Urgente' ? h('div', { style: 'margin-top:4px' }, h('span', { class: 'pill urgente' }, 'Urgente')) : null,
                   s.aut_estado ? h('div', { style: 'margin-top:4px' }, h('span', { class: 'pill ' + (s.aut_estado === 'Autorizado' ? 'e-completada' : s.aut_estado === 'Rechazado' ? 'e-rechazada' : 'e-en_revision') },
-                    s.aut_estado === 'Pendiente de autorización' ? 'Pendiente de autorización' : 'Gerente: ' + s.aut_estado)) : null),
+                    s.aut_estado === 'Pendiente de autorización' ? 'Pendiente de autorización' : 'Costo: ' + s.aut_estado)) : null),
                 h('td', null, h('b', null, s.producto || '—'), h('div', { class: 'sub' }, s.tipo_nombre), s.tipo === 'devolucion' ? h('div', { style: 'margin-top:4px' },
                   h('span', { class: 'pill ' + (s.dev_cumple === 'Sí' ? 'e-completada' : 'e-rechazada') }, s.dev_cumple === 'Sí' ? 'Cumple' : 'No cumple')) : null,
-                  s.forma_envio ? h('div', { class: 'sub' }, s.forma_envio + (s.paq_total ? ' · ' + s.paq_total + ' paq. · ' + s.paq_peso_kg + ' kg' : '')) : null,
+                  s.forma_envio ? h('div', { class: 'sub' }, s.forma_envio + (s.paq_total ? ' · ' + s.paq_total + ' pzas' + (s.paq_peso_kg ? ' · ' + s.paq_peso_kg + ' kg' : '') : '')) : null,
                   s.referencia ? h('div', { class: 'sub' }, 'Folio ' + s.referencia) : null,
                   s.cita === 'Sí' ? h('div', { style: 'margin-top:4px' }, h('span', { class: 'pill e-informacion' }, 'Requiere cita')) : null),
                 h('td', null, s.solicitante, h('div', { class: 'sub' }, s.area)),
-                h('td', null, s.origen, h('div', { class: 'sub' }, '→ ' + s.destino)),
+                h('td', { title: s.origen + ' → ' + s.destino }, corto(s.origen), h('div', { class: 'sub' }, '→ ' + corto(s.destino))),
                 h('td', { style: 'white-space:nowrap' },
                   s.fecha_abierta === 'Sí' ? h('span', { class: 'pill e-informacion' }, 'Fecha abierta') : (U.dia(s.fecha_requerida) || h('span', { class: 'gris' }, '—')),
                   s.recoleccion === 'Sí' ? h('div', { class: 'sub' }, 'Recolección: ' + (s.recoleccion_abierta === 'Sí' ? 'abierta' : U.dia(s.fecha_recoleccion))) : null,
@@ -211,18 +219,19 @@ window.API = API;
             })))));
       }
       function filtro(key, el) { el.addEventListener(el.tagName === 'INPUT' ? 'input' : 'change', function () { filtros[key] = el.value.trim(); pintar(); }); return el; }
+      var vistaSel = lista(VISTAS.map(function (v) { return [v[0], v[1]]; }), filtros.vista);
+      vistaSel.addEventListener('change', function () { filtros.vista = vistaSel.value; pintarKpis(); pintar(); });
       var q = filtro('q', h('input', { class: 'entrada', type: 'search', placeholder: 'Folio, factura, solicitante, ciudad, guía…', value: filtros.q }));
       var acciones = h('div', { class: 'acciones' },
         h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { cargar().then(tablero); } }, 'Actualizar'),
         h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { exportar(filtradas()); } }, 'Exportar a Excel (CSV)'));
       mount(main,
-        h('div', { class: 'cabecera', style: 'margin-bottom:14px' }, h('h1', { style: 'margin:0' }, 'Solicitudes'), acciones),
+        encabezado('Solicitudes', 'Aquí llegan los pedidos de las áreas. Da clic en una solicitud para atenderla: cambia su estatus, programa la fecha de carga y captura el monto.', acciones),
         kpis,
         h('div', { class: 'filtros' },
           h('div', { class: 'busqueda' }, campo('Buscar', q)),
-          campo('Tipo', filtro('tipo', lista([['', 'Todos']].concat(cfg.tipos.map(function (t) { return [t[0], t[1]]; })), filtros.tipo))),
+          campo('Ver', vistaSel),
           campo('Departamento', filtro('area', lista([['', 'Todos']].concat(departamentos().map(function (a) { return [a, a]; })), filtros.area))),
-          campo('Tipo de solicitud', filtro('prioridad', lista([['', 'Todas'], ['Programado', 'Programado'], ['Urgente', 'Urgente']], filtros.prioridad))),
           campo('Responsable', filtro('responsable', lista([['', 'Todos']].concat(datos.usuarios.map(function (u) { return [u.usuario, u.nombre]; })), filtros.responsable))),
           h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { filtros = { vista: 'todas', q: '', tipo: '', area: '', prioridad: '', responsable: '' }; tablero(); } }, 'Limpiar')),
         tabla);
@@ -309,6 +318,7 @@ window.API = API;
       var dFact = h('input', { class: 'entrada', value: s.destino_fact || '', maxlength: 160, placeholder: s.destino_direccion || 'Ej. Gómez Palacio, Dgo.' });
       var cliFact = h('input', { class: 'entrada', value: s.cliente_fact || '', maxlength: 160, placeholder: String((s.costo_absorbe === 'Otro' ? s.costo_detalle : s.costo_absorbe) || 'CESANTONI').toUpperCase() });
       var maniobra = lista([['No', 'No'], ['Sí', 'Sí']], s.maniobra || 'No');
+      var concepto = lista([['', 'Selecciona…']].concat(datos.conceptos.map(function (c) { return [c, c]; })), s.concepto);
       var cstCampo = h('input', { class: 'entrada', value: s.cst || 'CST', maxlength: 20 });
       var categ = lista([['', 'Sin categorizar']].concat(datos.categorias.map(function (c) { return [c, c]; })), s.categorizacion);
       /* Transportista y unidad sugieren el catálogo pero aceptan escribir otro. */
@@ -334,7 +344,7 @@ window.API = API;
           campo('Folio CSTEXT', cstext), campo('Categorización', categ),
           campo('Transportista', transp), campo('Unidad asignada', unidad),
           campo('Guía o referencia', guia), campo('Fecha de carga', fprog),
-          campo('Monto ($)', monto), campo('Tipo de movimiento', tipoMov),
+          campo('Monto ($)', monto), campo('¿Flete o maniobras?', concepto), campo('Tipo de movimiento', tipoMov),
           campo((nuevo ? 'Fecha tentativa de recolección' : 'Fecha requerida') + (s.fecha_abierta === 'Sí' ? ' (abierta: asígnala aquí)' : ''), freq),
           fent ? campo('Fecha tentativa de entrega' + (s.fecha_abierta === 'Sí' ? ' (abierta: asígnala aquí)' : ''), fent) : null,
           frec ? campo((nuevo ? 'Recolección posterior' : 'Fecha de recolección') + (s.recoleccion_abierta === 'Sí' ? ' (abierta: asígnala aquí)' : ''), frec) : null,
@@ -353,7 +363,7 @@ window.API = API;
         U.ocupado(guardar, true, 'Guardando…');
         var cambios = { estado: estado.value, responsable: resp.value, transportista: transp.value, unidad_asignada: unidad.value,
           guia: guia.value, fecha_programada: fprog.value, categorizacion: categ.value, monto: monto.value, tipo: tipoMov.value,
-          origen_fact: oFact.value, destino_fact: dFact.value, cliente_fact: cliFact.value, maniobra: maniobra.value, cst: cstCampo.value,
+          origen_fact: oFact.value, destino_fact: dFact.value, cliente_fact: cliFact.value, maniobra: maniobra.value, cst: cstCampo.value, concepto: concepto.value,
           fecha_requerida: freq.value !== (s.fecha_requerida || '') ? freq.value : undefined,
           fecha_entrega: fent && fent.value !== (s.fecha_entrega || '') ? fent.value : undefined,
           fecha_recoleccion: frec && frec.value !== (s.fecha_recoleccion || '') ? frec.value : undefined };
@@ -420,7 +430,7 @@ window.API = API;
     /* Facturación ve los datos de la plantilla, sin poder cambiar la solicitud. */
     function facturaInfo(s) {
       return h('section', { class: 'tarjeta' }, h('h2', null, 'Plantilla de facturación'),
-        h('dl', { class: 'datos' }, [['Proveedor', s.transportista], ['Fecha de carga', U.dia(s.fecha_programada)], ['Monto', dinero(s.monto)],
+        h('dl', { class: 'datos' }, [['Proveedor', s.transportista], ['Fecha de carga', U.dia(s.fecha_programada)], ['Monto', dinero(s.monto)], ['Flete o maniobras', s.concepto],
           ['Consecutivo', s.folio_cstext], ['Cliente', s.cliente_fact], ['Requiere factura de maniobra', s.maniobra || 'No'], ['CST', s.cst || 'CST'],
           ['Facturada', s.facturada ? U.dia(s.facturada) + (s.facturada_por ? ' · ' + s.facturada_por : '') : 'Pendiente']]
           .filter(function (d) { return d[1]; }).map(function (d) { return h('div', null, h('dt', null, d[0]), h('dd', null, d[1])); })));
@@ -459,7 +469,7 @@ window.API = API;
       var esAdmin = yo.rol === 'admin';
       var fecha = function (s) { return s.fecha_programada || String(s.cerrada || '').slice(0, 10); };
       var columnas = function (extra) {
-        return COLS_FACT.concat(extra ? [['ESTATUS', 'texto', 14, function (s) { return cfg.estados[s.estado] || s.estado; }],
+        return COLS_FACT.concat(extra ? [['CONCEPTO', 'texto', 12, function (s) { return s.concepto || 'Sin definir'; }], ['ESTATUS', 'texto', 14, function (s) { return cfg.estados[s.estado] || s.estado; }],
           ['FOLIO', 'texto', 15, function (s) { return s.folio; }], ['FACTURADA', 'fecha', 12, function (s) { return s.facturada || ''; }]] : []);
       };
       var hoja = function (nombre, items, extra) {
@@ -477,8 +487,31 @@ window.API = API;
         }).forEach(function (s) { var p = s.transportista || 'Sin proveedor asignado'; (mapa[p] = mapa[p] || []).push(s); });
         return Object.keys(mapa).sort().map(function (p) { return { proveedor: p, items: mapa[p].sort(function (a, b) { return fecha(a).localeCompare(fecha(b)); }) }; });
       }
-      function descargar(g) {
-        bajarArchivo(libroXlsx([hoja(g.proveedor, g.items, false)]), 'Plantilla_' + limpioArchivo(g.proveedor) + '_' + (filtrosFact.mes || cfg.hoy) + '.xlsx');
+      /* Fletes y maniobras van en plantillas separadas; si salen varias, se descargan juntas en un ZIP con una carpeta por concepto. */
+      var CARPETA = { Flete: 'Fletes', Maniobras: 'Maniobras' };
+      var carpeta = function (s) { return CARPETA[s.concepto] || 'Sin definir'; };
+      var sufijo = function () { return (filtrosFact.mes || cfg.hoy); };
+      function plantillas(lista) {
+        var archivos = [];
+        lista.forEach(function (g) {
+          var porCarpeta = {};
+          g.items.forEach(function (s) { (porCarpeta[carpeta(s)] = porCarpeta[carpeta(s)] || []).push(s); });
+          Object.keys(porCarpeta).sort().forEach(function (c) {
+            archivos.push({ carpeta: c, nombre: 'Plantilla_' + limpioArchivo(g.proveedor) + '_' + (c === 'Sin definir' ? 'Sin_definir' : c) + '_' + sufijo() + '.xlsx',
+              hoja: hoja(g.proveedor, porCarpeta[c], false) });
+          });
+        });
+        return archivos;
+      }
+      function descargarArchivos(archivos, nombreZip) {
+        if (archivos.length === 1) { bajarArchivo(libroXlsx([archivos[0].hoja]), archivos[0].nombre); return; }
+        bajarArchivo(zipArchivos(archivos.map(function (a) { return { nombre: a.carpeta + '/' + a.nombre, bytes: libroBytes([a.hoja]) }; })), nombreZip);
+      }
+      function descargar(g) { descargarArchivos(plantillas([g]), 'Plantillas_' + limpioArchivo(g.proveedor) + '_' + sufijo() + '.zip'); }
+      function descargarTodas() {
+        var lista = grupos();
+        if (!lista.length) { U.toast('No hay entregas con estos filtros.', true); return; }
+        descargarArchivos(plantillas(lista), 'Plantillas_' + sufijo() + '.zip');
       }
       /* Administrador: un solo Excel del mes, con una hoja por proveedor y un resumen al inicio. */
       function descargarMes() {
@@ -502,8 +535,10 @@ window.API = API;
         mount(cont, lista.map(function (g) {
           var total = g.items.reduce(function (t, s) { return t + (Number(s.monto) || 0); }, 0);
           var faltan = g.items.filter(function (s) { return s.monto === '' || !s.folio_cstext; }).length;
+          var sinConcepto = g.items.filter(function (s) { return !s.concepto; }).length;
           var pendientes = g.items.filter(function (s) { return !s.facturada; });
-          var bajar = h('button', { class: 'btn btn-pri btn-chico', type: 'button', onclick: function () { descargar(g); } }, '⬇ Descargar plantilla (Excel)');
+          var varias = plantillas([g]).length > 1;
+          var bajar = h('button', { class: 'btn btn-pri btn-chico', type: 'button', onclick: function () { descargar(g); } }, varias ? '⬇ Descargar plantillas (ZIP)' : '⬇ Descargar plantilla (Excel)');
           /* Solo las entregas concluidas se marcan como facturadas. */
           var marcar = filtrosFact.estatus !== 'completada' ? null : h('button', { class: 'btn btn-chico', type: 'button' }, pendientes.length ? 'Marcar como facturadas' : 'Quitar marca de facturadas');
           if (marcar) marcar.addEventListener('click', function () {
@@ -517,13 +552,15 @@ window.API = API;
               h('p', { class: 'gris chico', style: 'margin:4px 0 0' }, g.items.length + (g.items.length === 1 ? ' entrega' : ' entregas') + ' · total ' + (dinero(total) || '$0.00'))),
               h('div', { class: 'acciones' }, bajar, marcar)),
             faltan ? h('div', { class: 'aviso aviso-alerta', style: 'margin:12px 0 0' }, h('p', null, faltan + (faltan === 1 ? ' entrega no tiene' : ' entregas no tienen') + ' monto o consecutivo. Pide al planeador que los capture antes de facturar.')) : null,
+            sinConcepto ? h('div', { class: 'aviso aviso-alerta', style: 'margin:12px 0 0' }, h('p', null, sinConcepto + (sinConcepto === 1 ? ' entrega no dice' : ' entregas no dicen') + ' si es flete o maniobras; se descarga en la carpeta «Sin definir».')) : null,
             h('div', { class: 'tabla-caja', style: 'margin-top:12px' }, h('table', { class: 'tabla-fact' },
-              h('thead', null, h('tr', null, COLS_FACT.map(function (c) { return h('th', null, c[0]); }).concat([h('th', null, 'ESTATUS'), h('th', null, 'FACTURADA')]))),
+              h('thead', null, h('tr', null, COLS_FACT.map(function (c) { return h('th', null, c[0]); }).concat([h('th', null, 'CONCEPTO'), h('th', null, 'ESTATUS'), h('th', null, 'FACTURADA')]))),
               h('tbody', null, g.items.map(function (s) {
                 var tr = h('tr', { tabindex: '0' }, COLS_FACT.map(function (c) {
                   var v = c[3](s);
                   return h('td', { class: c[1] === 'moneda' ? 'celda-monto' : c[1] === 'izq' ? '' : 'centro' }, c[1] === 'moneda' ? dinero(v) : c[1] === 'fecha' ? diaCorto(v) : v);
-                }).concat([h('td', { class: 'centro' }, U.estado(cfg, s.estado)),
+                }).concat([h('td', { class: 'centro' }, s.concepto ? h('span', { class: 'pill ' + (s.concepto === 'Flete' ? 'e-recibida' : 'e-en_revision') }, s.concepto) : h('span', { class: 'gris' }, 'Sin definir')),
+                  h('td', { class: 'centro' }, U.estado(cfg, s.estado)),
                   h('td', { class: 'centro', style: 'white-space:nowrap' }, s.facturada ? U.dia(s.facturada) : h('span', { class: 'gris' }, 'Pendiente'),
                   s.folio !== s.folio_cstext ? h('div', { class: 'sub' }, s.folio) : null)]));
                 tr.addEventListener('click', function () { detalle(s.folio); });
@@ -537,14 +574,88 @@ window.API = API;
       [[estatus, 'estatus'], [mes, 'mes'], [ver, 'ver']].forEach(function (x) { x[0].addEventListener('change', function () { filtrosFact[x[1]] = x[0].value; pintar(); }); });
       var cabeceraMes = h('div', { style: 'margin:-4px 0 14px' });
       mount(main,
-        h('div', { class: 'cabecera', style: 'margin-bottom:14px' }, h('div', null, h('h1', { style: 'margin:0' }, 'Facturación'),
-          h('p', { class: 'gris chico', style: 'margin:4px 0 0' }, 'Entregas por estatus y mes de carga, separadas por proveedor. Cada proveedor descarga su propia plantilla.')),
-          h('div', { class: 'acciones' },
-            esAdmin ? h('button', { class: 'btn btn-osc btn-chico', type: 'button', onclick: descargarMes }, '⬇ Excel del mes (una hoja por proveedor)') : null,
-            h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { cargar().then(facturacion); } }, 'Actualizar'))),
+        encabezado('Facturación', 'Elige el estatus y el mes. Cada proveedor tiene su plantilla, separada en fletes y maniobras. «Descargar todas» baja un ZIP con una carpeta para fletes y otra para maniobras.', [
+          h('button', { class: 'btn btn-pri btn-chico', type: 'button', onclick: descargarTodas }, '⬇ Descargar todas (ZIP)'),
+          esAdmin ? h('button', { class: 'btn btn-osc btn-chico', type: 'button', onclick: descargarMes }, '⬇ Excel del mes (una hoja por proveedor)') : null,
+          h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { cargar().then(facturacion); } }, 'Actualizar')]),
         h('div', { class: 'filtros filtros-fact' }, campo('Estatus', estatus), campo('Mes de carga', mes), campo('Ver', ver)),
         cabeceraMes,
         cont);
+      pintar();
+    }
+
+    /* ---------------------------------------------------------------- gastos por departamento */
+    var filtrosGastos = { mes: '', concepto: '' };
+    function gastos() {
+      nav('gastos');
+      if (!datos) { mount(main, h('p', { class: 'gris' }, 'Cargando…')); return; }
+      var fecha = function (s) { return s.fecha_programada || String(s.creada || '').slice(0, 10); };
+      var cuerpo = h('div');
+      function calcular() {
+        var vivas = datos.solicitudes.filter(function (s) {
+          return ['cancelada', 'rechazada'].indexOf(s.estado) < 0 && (!filtrosGastos.mes || fecha(s).slice(0, 7) === filtrosGastos.mes) &&
+            (!filtrosGastos.concepto || s.concepto === filtrosGastos.concepto);
+        });
+        var conMonto = vivas.filter(function (s) { return s.monto !== ''; }), mapa = {};
+        conMonto.forEach(function (s) {
+          var k = s.area || 'Sin departamento', m = Number(s.monto) || 0;
+          var d = mapa[k] = mapa[k] || { area: k, total: 0, n: 0, flete: 0, maniobras: 0 };
+          d.total += m; d.n += 1;
+          if (s.concepto === 'Flete') d.flete += m; else if (s.concepto === 'Maniobras') d.maniobras += m;
+        });
+        return { filas: Object.keys(mapa).map(function (k) { return mapa[k]; }).sort(function (a, b) { return b.total - a.total || a.area.localeCompare(b.area); }),
+          total: conMonto.reduce(function (t, s) { return t + (Number(s.monto) || 0); }, 0), n: conMonto.length, sinMonto: vivas.length - conMonto.length };
+      }
+      function pintar() {
+        var r = calcular(), max = r.filas.length ? r.filas[0].total : 0;
+        var tile = function (titulo, valor, nota) { return h('div', { class: 'tile' }, h('span', null, titulo), h('b', null, valor), nota ? h('small', null, nota) : null); };
+        var tooltip = h('div', { class: 'tooltip', role: 'status', hidden: true });
+        var grafica = h('div', { class: 'gbarras', role: 'list', 'aria-label': 'Gasto por departamento' }, r.filas.map(function (d) {
+          var detalle = d.area + ': ' + dinero(d.total) + ' · ' + d.n + (d.n === 1 ? ' servicio' : ' servicios') +
+            (d.flete ? ' · fletes ' + dinero(d.flete) : '') + (d.maniobras ? ' · maniobras ' + dinero(d.maniobras) : '');
+          var fila = h('div', { class: 'gbar-fila', role: 'listitem', tabindex: '0', 'aria-label': detalle },
+            h('span', { class: 'gbar-nombre' }, d.area),
+            h('span', { class: 'gbar-pista' }, h('span', { class: 'gbar-marca', style: 'width:calc((100% - 170px) * ' + Math.max(0.01, max ? d.total / max : 0).toFixed(4) + ')' }),
+              h('span', { class: 'gbar-valor' }, dinero(d.total), h('span', { class: 'gris' }, ' · ' + d.n))));
+          var ver = function (ev) {
+            tooltip.textContent = detalle; tooltip.hidden = false;
+            var caja = grafica.getBoundingClientRect(), y = fila.getBoundingClientRect();
+            tooltip.style.top = (y.top - caja.top - 34) + 'px';
+            tooltip.style.left = Math.min(Math.max(0, (ev && ev.clientX ? ev.clientX - caja.left : 120) - 40), caja.width - 260) + 'px';
+          };
+          fila.addEventListener('mousemove', ver); fila.addEventListener('focus', ver);
+          fila.addEventListener('mouseleave', function () { tooltip.hidden = true; }); fila.addEventListener('blur', function () { tooltip.hidden = true; });
+          return fila;
+        }));
+        mount(cuerpo,
+          h('div', { class: 'tiles' },
+            tile('Total gastado', dinero(r.total) || '$0.00', mesTexto(filtrosGastos.mes)),
+            tile('Servicios con monto', String(r.n), r.sinMonto ? r.sinMonto + ' sin monto todavía' : null),
+            tile('Promedio por servicio', r.n ? dinero(r.total / r.n) : '—'),
+            tile('Departamento con más gasto', r.filas.length ? r.filas[0].area : '—', r.filas.length ? dinero(r.filas[0].total) : null)),
+          r.filas.length ? h('section', { class: 'tarjeta' }, h('h2', null, 'Gasto por departamento'),
+            h('p', { class: 'gris chico' }, 'Suma de los montos que capturó el planeador. Pasa el mouse sobre una barra para ver fletes y maniobras.'),
+            h('div', { class: 'grafica' }, grafica, tooltip))
+            : h('div', { class: 'tarjeta', style: 'text-align:center' }, h('p', { class: 'gris', style: 'margin:0' }, 'Todavía no hay montos capturados con estos filtros.')),
+          r.filas.length ? h('section', { class: 'tarjeta' }, h('h2', null, 'Detalle'),
+            h('div', { class: 'tabla-caja' }, h('table', { class: 'tabla-gastos' },
+              h('thead', null, h('tr', null, ['Departamento', 'Servicios', 'Fletes', 'Maniobras', 'Total'].map(function (t, i) { return h('th', { class: i ? 'celda-monto' : null }, t); }))),
+              h('tbody', null, r.filas.map(function (d) {
+                return h('tr', { class: 'sin-clic' }, h('td', null, d.area), h('td', { class: 'celda-monto' }, String(d.n)), h('td', { class: 'celda-monto' }, d.flete ? dinero(d.flete) : '—'),
+                  h('td', { class: 'celda-monto' }, d.maniobras ? dinero(d.maniobras) : '—'), h('td', { class: 'celda-monto' }, h('b', null, dinero(d.total))));
+              }).concat([h('tr', { class: 'sin-clic total' }, h('td', null, h('b', null, 'Total')), h('td', { class: 'celda-monto' }, String(r.n)),
+                h('td', { class: 'celda-monto' }, dinero(r.filas.reduce(function (t, d) { return t + d.flete; }, 0)) || '—'),
+                h('td', { class: 'celda-monto' }, dinero(r.filas.reduce(function (t, d) { return t + d.maniobras; }, 0)) || '—'),
+                h('td', { class: 'celda-monto' }, h('b', null, dinero(r.total))))]))))) : null);
+      }
+      var mes = h('input', { class: 'entrada', type: 'month', value: filtrosGastos.mes });
+      var concepto = lista([['', 'Fletes y maniobras']].concat(datos.conceptos.map(function (c) { return [c, c === 'Flete' ? 'Solo fletes' : 'Solo maniobras']; })), filtrosGastos.concepto);
+      [[mes, 'mes'], [concepto, 'concepto']].forEach(function (x) { x[0].addEventListener('change', function () { filtrosGastos[x[1]] = x[0].value; pintar(); }); });
+      mount(main,
+        encabezado('Gastos', 'Cuánto ha gastado cada departamento que ha pedido servicios. Elige un mes o déjalo vacío para ver todo.',
+          [h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { cargar().then(gastos); } }, 'Actualizar')]),
+        h('div', { class: 'filtros filtros-fact' }, campo('Mes', mes), campo('Concepto', concepto)),
+        cuerpo);
       pintar();
     }
 
@@ -554,7 +665,7 @@ window.API = API;
       mount(main, h('p', { class: 'gris' }, 'Cargando…'));
       run('adminConfig').then(function (c) {
         var esAdmin = yo.rol === 'admin';
-        var partes = [h('h1', null, 'Configuración'),
+        var partes = [encabezado('Configuración', esAdmin ? 'Da de alta al personal, elige quién recibe cada alerta y edita las listas del formulario.' : 'Tu cuenta y tu contraseña.'),
           h('section', { class: 'tarjeta' }, h('h2', null, 'Mi cuenta'), h('p', null, yo.nombre + ' · ' + yo.correo + ' · ' + rolNombre(yo.rol)),
             h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { cambiarPassword(false); } }, 'Cambiar mi contraseña')),
           h('section', { class: 'tarjeta' }, h('h2', null, 'Enlaces'),

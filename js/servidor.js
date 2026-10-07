@@ -4,7 +4,7 @@
  * La seguridad real la imponen las reglas de Firestore (firestore.rules, bloque «Solicitudes de movimientos»).
  */
 import * as fb from './firebase-sdk.js?v=13';
-import * as C from './catalogos.js?v=12';
+import * as C from './catalogos.js?v=15';
 
 const CFG = window.CP_CONFIG || {};
 const COL = { config: 'sm_config', admins: 'sm_admins', inv: 'sm_invitaciones', sol: 'sm_solicitudes', correos: 'sm_correos', aut: 'sm_autorizaciones' };
@@ -614,12 +614,12 @@ export async function adminDatos() {
     aut_correo: s.aut_correo || '', aut_enviada: s.aut_enviada || '', aut_por: s.aut_por || s.aut_gerente || '', aut_motivo: s.aut_motivo || '', paq_total: s.paq_total || '', paq_peso_kg: s.paq_peso_kg || '',
     folio_cstext: s.folio_cstext || '', categorizacion: s.categorizacion || '', responsable: s.responsable || '', transportista: s.transportista || '',
     unidad_asignada: s.unidad_asignada || '', guia: s.guia || '', fecha_programada: s.fecha_programada || '', cerrada: s.cerrada || '',
-    monto: s.monto || '', maniobra: s.maniobra || 'No', cst: s.cst || C.CST, facturada: s.facturada || '',
+    monto: s.monto || '', concepto: s.concepto || '', maniobra: s.maniobra || 'No', cst: s.cst || C.CST, facturada: s.facturada || '',
     origen_fact: s.origen_fact || s.origen_direccion || lugarTexto(s, 'origen'), destino_fact: s.destino_fact || s.destino_direccion || lugarTexto(s, 'destino'),
     cliente_fact: s.cliente_fact || clienteFactura(s) }))
     .sort((x, y) => String(y.creada).localeCompare(String(x.creada)));
   return { yo: publico(a), solicitudes: lista, usuarios: await equipo(), categorias: C.CATEGORIAS, transportistas: C.TRANSPORTISTAS, tipos_unidad: C.TIPOS_UNIDAD,
-    aut_estados: C.AUT_ESTADOS, roles: C.ROLES, alertas: C.ALERTAS, tipos: CAT.tipos };
+    aut_estados: C.AUT_ESTADOS, roles: C.ROLES, alertas: C.ALERTAS, tipos: CAT.tipos, conceptos: C.CONCEPTOS, areas: CAT.areas };
 }
 
 export async function adminDetalle(_t, folio) {
@@ -672,6 +672,7 @@ export async function adminActualizar(_t, folio, cambios) {
     cambios.monto = m.toFixed(2);
   }
   if (cambios.tipo && !CAT.tipos.concat(C.TIPOS).some((x) => x[0] === cambios.tipo)) throw fallo('Tipo de movimiento no válido.');
+  if (cambios.concepto && !C.CONCEPTOS.includes(cambios.concepto)) throw fallo('Elige si es flete o maniobras.');
   if (cambios.folio_cstext) {
     cambios.folio_cstext = String(cambios.folio_cstext).trim().toUpperCase().replace(/^(\d+)$/, 'CSTEXT$1');
     const otro = (await getAll(donde(COL.sol, 'folio_cstext', cambios.folio_cstext))).find((x) => x.folio !== folio);
@@ -679,7 +680,7 @@ export async function adminActualizar(_t, folio, cambios) {
   }
   const t = ahora(), patch = { actualizada: t };
   ['folio_cstext', 'categorizacion', 'transportista', 'unidad_asignada', 'guia', 'fecha_programada', 'aut_gerente', 'aut_comentario', 'costo_cotizado',
-    'monto', 'origen_fact', 'destino_fact', 'cliente_fact', 'cst', 'tipo'].forEach((k) => {
+    'monto', 'origen_fact', 'destino_fact', 'cliente_fact', 'cst', 'tipo', 'concepto'].forEach((k) => {
     if (cambios[k] !== undefined) patch[k] = String(cambios[k]).trim().slice(0, k === 'aut_comentario' ? 1000 : 160);
   });
   /* Asignar la fecha a una solicitud con «Fecha abierta» sin crear una nueva. */

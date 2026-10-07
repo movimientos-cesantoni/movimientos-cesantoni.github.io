@@ -1,5 +1,5 @@
 /* Formulario y seguimiento de solicitudes (Liga 1). Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=13';
+import * as API from './servidor.js?v=15';
 window.API = API;
 (function () {
     'use strict';
@@ -20,11 +20,42 @@ window.API = API;
     }
 
     function arriba(contenido) { mount(document.getElementById('arriba'), contenido || null); }
+    /* Menú lateral del portal: lo básico, con una línea de ayuda en cada opción. */
+    function menuPortal(activa) {
+      U.menu(document.getElementById('menu'), [
+        { clave: 'nueva', icono: '➕', titulo: 'Nueva solicitud', ayuda: 'Pide un envío o una recolección', accion: function () { formulario(); } },
+        { clave: 'mis', icono: '📋', titulo: 'Mis solicitudes', ayuda: 'Revisa el avance de tus folios', accion: function () { if (cfg.sesion) misSolicitudes(); else inicio(true); } },
+        { clave: 'modificar', icono: '✎', titulo: 'Modificar una solicitud', ayuda: 'Cambia un folio que aún no se revisa', accion: pantallaModificar },
+        { clave: 'ayuda', icono: '❔', titulo: '¿Cómo funciona?', ayuda: 'Los pasos, explicados', accion: ayuda }
+      ], activa, cfg.sesion ? [h('div', { class: 'lateral-usuario' }, h('span', null, 'Entraste como'), h('b', null, cfg.sesion.correo)),
+        h('button', { class: 'btn btn-chico', type: 'button', onclick: salir }, 'Salir')] : null);
+    }
+    function pantallaModificar() {
+      acceso = null; arriba(null); menuPortal('modificar');
+      mount(main, h('h1', null, 'Modificar una solicitud'),
+        h('p', { class: 'ayuda-pantalla', style: 'margin-bottom:16px' }, 'Escribe el folio que te llegó por correo. Puedes cambiarlo mientras Logística no lo haya puesto en revisión.'),
+        h('div', { style: 'max-width:480px' }, buscadorModificar(true)));
+    }
+    function ayuda() {
+      acceso = null; arriba(null); menuPortal('ayuda');
+      var pasos = [
+        ['➕', 'Llena tu solicitud', 'Dinos qué envías, quién lo pide, de dónde sale, a dónde va, cómo se envía, quién paga y las fechas. Te guiamos paso a paso.'],
+        ['📧', 'Recibe tu folio', 'Te llega un correo con tu folio (CSTEXT) y, la primera vez, una clave para entrar a «Mis solicitudes».'],
+        ['🚚', 'Logística la atiende', 'La revisa, programa la fecha de carga y, si lo paga CESANTONI, pide la autorización del costo por correo.'],
+        ['📋', 'Sigue el avance', 'En «Mis solicitudes» ves el estatus, los mensajes y los documentos. Mientras esté «Recibida» la puedes modificar.']];
+      mount(main, h('h1', null, '¿Cómo funciona?'),
+        h('p', { class: 'ayuda-pantalla', style: 'margin-bottom:16px' }, 'Cuatro pasos. Si tienes dudas, escribe a Logística desde el seguimiento de tu folio.'),
+        h('ol', { class: 'pasos-ayuda' }, pasos.map(function (p, i) {
+          return h('li', { class: 'tarjeta' }, h('span', { class: 'paso-icono', 'aria-hidden': 'true' }, p[0]), h('div', null, h('h2', null, (i + 1) + '. ' + p[1]), h('p', { class: 'gris', style: 'margin:0' }, p[2])));
+        })),
+        h('p', null, h('button', { class: 'btn btn-pri', type: 'button', onclick: function () { formulario(); } }, 'Hacer una solicitud')));
+    }
 
     /* ---------------------------------------------------------------- portada */
-    function inicio() {
+    function inicio(enfocarEntrada) {
       acceso = null;
       arriba(null);
+      menuPortal(enfocarEntrada === true ? 'mis' : '');
       var correo = h('input', { class: 'entrada', id: 'c-correo', type: 'email', placeholder: 'tu.correo@cesantoni.com.mx', autocomplete: 'email', value: recordado().correo || '' });
       var clave = h('input', { class: 'entrada', id: 'c-clave', type: 'password', autocomplete: 'current-password', placeholder: 'XXXX-XXXX' });
       var err = h('p', { class: 'chico', style: 'color:var(--mal)', role: 'alert', hidden: true });
@@ -63,17 +94,18 @@ window.API = API;
             h('p', { class: 'gris chico' }, 'Entra con tu correo y la clave que te enviamos con tu primera solicitud para ver el estado, responder a Logística o agregar archivos.'),
             form),
           buscadorModificar())));
+      if (enfocarEntrada === true) correo.focus();
     }
 
     /* «Modificar una solicitud»: con el folio (y correo + clave si no hay sesión) abre el formulario con sus datos. */
-    function buscadorModificar() {
+    function buscadorModificar(solo) {
       var folio = h('input', { class: 'entrada', id: 'm-folio', placeholder: 'CSTEXT00760', autocomplete: 'off', style: 'text-transform:uppercase' });
       var correo = cfg.sesion ? null : h('input', { class: 'entrada', id: 'm-correo', type: 'email', autocomplete: 'email', value: recordado().correo || '' });
       var clave = cfg.sesion ? null : h('input', { class: 'entrada', id: 'm-clave', type: 'password', autocomplete: 'current-password', placeholder: 'XXXX-XXXX' });
       var err = h('p', { class: 'chico', style: 'color:var(--mal)', role: 'alert', hidden: true });
       var btn = h('button', { class: 'btn btn-chico', type: 'submit' }, 'Buscar folio');
-      var f = h('form', { class: 'tarjeta', novalidate: true }, h('h2', null, 'Modificar una solicitud'),
-        h('p', { class: 'gris chico' }, 'Puedes cambiar tu solicitud mientras Logística no la haya puesto en revisión.'),
+      var f = h('form', { class: 'tarjeta', novalidate: true }, solo ? null : h('h2', null, 'Modificar una solicitud'),
+        solo ? null : h('p', { class: 'gris chico' }, 'Puedes cambiar tu solicitud mientras Logística no la haya puesto en revisión.'),
         h('div', { class: 'campo', style: 'margin-bottom:10px' }, h('label', { for: 'm-folio' }, 'Folio'), folio),
         correo ? h('div', { class: 'campo', style: 'margin-bottom:10px' }, h('label', { for: 'm-correo' }, 'Correo'), correo) : null,
         clave ? h('div', { class: 'campo', style: 'margin-bottom:12px' }, h('label', { for: 'm-clave' }, 'Clave'), clave) : null,
@@ -113,12 +145,7 @@ window.API = API;
           h('button', { class: 'liga', type: 'button', onclick: function () { seguimiento(s); } }, 'Ver seguimiento'))));
     }
 
-    function arribaSesion() {
-      arriba([
-        h('button', { class: 'btn btn-chico', type: 'button', onclick: misSolicitudes }, 'Mis solicitudes'), ' ',
-        h('button', { class: 'btn btn-chico', type: 'button', onclick: formulario }, 'Nueva solicitud'), ' ',
-        h('button', { class: 'btn btn-chico', type: 'button', title: cfg.sesion.correo, onclick: salir }, 'Salir')]);
-    }
+    function arribaSesion(activa) { arriba(null); menuPortal(activa || 'mis'); }
     function salir() { run('salirSolicitante').then(function () { cfg.sesion = null; inicio(); }); }
 
     function misSolicitudes() {
@@ -151,6 +178,7 @@ window.API = API;
     /* op.modificar: abre el folio con sus datos para cambiarlo; op.copia: nueva solicitud con los datos de otro folio. */
     function formulario(op) {
       op = op && (op.modificar || op.copia) ? op : {};
+      menuPortal(op.modificar ? 'modificar' : 'nueva');
       var base = op.modificar || op.copia || null;
       arriba(h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { if (cfg.sesion) misSolicitudes(); else inicio(); } }, 'Cancelar'));
       var prev = recordado();

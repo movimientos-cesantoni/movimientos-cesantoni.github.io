@@ -45,7 +45,17 @@ Con «Modificar una solicitud» (folio, y correo + clave si no hay sesión) se a
 está «Recibida» y sin autorización enviada; después se muestra la leyenda de folio bloqueado, con «Crear nueva solicitud con estos datos» y
 «Avisar a Logística por correo». Cada modificación avisa a quien tenga activada la alerta «Solicitud modificada».
 
-Pruebas: `tests/solicitudes-web/e2e.mjs` (repositorio privado) con el emulador de Firebase: 146 de 146 correctas.
+Pruebas: `tests/solicitudes-web/e2e.mjs` (repositorio privado) con el emulador de Firebase: 154 de 154 correctas.
+
+## Diseño
+
+Portal y panel con menú lateral: cada opción dice en una línea para qué sirve. En celular el menú pasa arriba como barra.
+Panel: Solicitudes (5 contadores y filtro «Ver»), Facturación, Gastos (gasto por departamento con filtros de mes y concepto) y Configuración.
+
+## Fletes y maniobras
+
+El planeador indica en cada solicitud si el cargo es Flete o Maniobras. En Facturación, las plantillas de cada proveedor se separan por
+concepto; si salen varias, se descargan en un ZIP con las carpetas «Fletes» y «Maniobras» («Descargar todas (ZIP)» junta a todos los proveedores).
 
 ## Folio
 
