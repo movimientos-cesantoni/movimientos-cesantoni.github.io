@@ -135,50 +135,94 @@ window.U = (function () {
       h('p', { class: 'gris chico', style: 'margin:10px 0 0' }, 'Medidas en cm (largo × ancho × alto). Peso volumétrico aprox.: ' + s.paq_vol_kg + ' kg.'));
   }
 
-  /* Fechas de la solicitud: requerida (o abierta) y recolección. */
+  /* Fechas de la solicitud. Las nuevas guardan recolección y entrega tentativas; las anteriores, fecha requerida y recolección. */
   var ENTREGAS = ['envio', 'entrega_recoleccion', 'mercadotecnia'];
   function fechas(s) {
-    var out = [];
-    if (s.fecha_requerida || s.fecha_abierta) out.push([ENTREGAS.indexOf(s.tipo) >= 0 ? 'Fecha de entrega' : 'Fecha requerida', s.fecha_abierta === 'Sí' ? 'Fecha abierta' : dia(s.fecha_requerida)]);
+    var out = [], abierta = s.fecha_abierta === 'Sí';
+    if (s.fecha_entrega !== undefined) {
+      out.push(['Fecha tentativa de recolección', abierta ? 'Fecha abierta' : dia(s.fecha_requerida)], ['Fecha tentativa de entrega', abierta ? 'Fecha abierta' : dia(s.fecha_entrega)]);
+      if (s.recoleccion === 'Sí') out.push(['Recolección posterior', s.recoleccion_abierta === 'Sí' ? 'Fecha abierta' : dia(s.fecha_recoleccion)]);
+      return out;
+    }
+    if (s.fecha_requerida || abierta) out.push([ENTREGAS.indexOf(s.tipo) >= 0 ? 'Fecha de entrega' : 'Fecha requerida', abierta ? 'Fecha abierta' : dia(s.fecha_requerida)]);
     if (s.recoleccion === 'Sí') out.push(['Fecha de recolección', s.recoleccion_abierta === 'Sí' ? 'Fecha abierta' : dia(s.fecha_recoleccion)]);
     else if (s.recoleccion === 'No') out.push(['Recolección', 'No requiere recolección']);
     return out;
   }
-  function articulos(s) {
-    return [].concat(s.articulos || []).map(function (a) { return a.cantidad + ' × ' + a.producto + (a.descripcion ? ' · ' + a.descripcion : ''); }).join('\n');
+  /* «10 × Caja de producto · 60 × 40 × 35 cm · 12 kg c/u (120 kg)» */
+  function linea(a) {
+    var n = Number(a.cantidad) || 0, kg = Number(a.peso) || 0;
+    return a.cantidad + ' × ' + (a.producto ? a.producto + (a.descripcion ? ' · ' + a.descripcion : '') : a.descripcion) +
+      (a.largo ? ' · ' + a.largo + ' × ' + a.ancho + ' × ' + a.alto + ' cm' : '') + (kg ? ' · ' + kg + ' kg c/u' + (n > 1 ? ' (' + Math.round(n * kg * 10) / 10 + ' kg)' : '') : '');
   }
-  function contacto(nombre, tel) { return [nombre, tel].filter(Boolean).join(' · '); }
+  function articulos(s) { return [].concat(s.articulos || []).map(linea).join('\n'); }
+  function enlace(url) { return /^https?:\/\//i.test(url || '') ? h('a', { href: url, target: '_blank', rel: 'noopener' }, 'Abrir ubicación') : ''; }
+  function lugar(s, pre) {
+    var nombre = s[pre + '_nombre'] ? s[pre + '_nombre'] + (s[pre + '_ciudad'] ? ', ' + s[pre + '_ciudad'] : '') + '\n' : '';
+    return nombre + (s[pre + '_direccion'] || '');
+  }
+  function contacto(s, pre) { return [s[pre + '_contacto'], s[pre + '_telefono']].filter(Boolean).join(' · '); }
   /* Datos de la solicitud que ven quien solicita y Logística. */
   function detalle(s) {
-    return [['Departamento solicitante', s.area], ['Teléfono', s.telefono],
+    return [['Departamento / Área', s.area], ['Teléfono', s.telefono],
       ['¿Quién absorbe el costo?', s.costo_absorbe ? s.costo_absorbe + (s.costo_detalle ? ': ' + s.costo_detalle : '') : ''],
-      ['Artículos', articulos(s)], ['Folio', s.referencia], ['Factura', s.cliente], ['Requiere cita', s.horario],
-      ['Dirección de salida', s.origen_direccion], ['Contacto en salida', contacto(s.origen_contacto, s.origen_telefono)], ['Referencias de salida', s.origen_referencias],
-      ['Dirección de entrega', s.destino_direccion], ['Contacto en entrega', contacto(s.destino_contacto, s.destino_telefono)], ['Referencias de entrega', s.destino_referencias],
-      ['Descripción de la solicitud', s.motivo], ['Observaciones', s.observaciones]];
+      ['Cantidad, dimensiones y peso', articulos(s)], ['Peso total', s.paq_peso_kg ? s.paq_peso_kg + ' kg' : ''],
+      ['¿De dónde?', lugar(s, 'origen')], ['Contacto en origen', contacto(s, 'origen')], ['Ubicación de origen', enlace(s.origen_link)], ['Referencias de origen', s.origen_referencias],
+      ['¿A dónde?', lugar(s, 'destino')], ['Contacto en destino', contacto(s, 'destino')], ['Ubicación de destino', enlace(s.destino_link)], ['Referencias de destino', s.destino_referencias],
+      ['Folio', s.referencia], ['Factura', s.cliente], ['Requiere cita', s.horario], ['Descripción general', s.motivo], ['Observaciones', s.observaciones]];
   }
-  var AUT_CLASE = { 'Pendiente de autorización': 'e-en_revision', 'Autorizado': 'e-completada', 'Rechazado': 'e-rechazada' };
-  /* Solicitudes con menos de 48 horas: autorización del Gerente de Área. */
+  /* Estado de la autorización (costo de CESANTONI o menos de 48 horas). */
+  function estadoAutorizacion(s) {
+    if (!s.aut_estado) return null;
+    var quien = [s.aut_nombre, s.aut_por || s.aut_gerente].filter(Boolean).join(' · ');
+    if (s.aut_estado === 'Autorizado') return { clase: 'aviso-ok', titulo: '✓ Costo autorizado', filas: [['Autorizado por', quien], ['Fecha', dia(s.aut_fecha)], ['Comentario', s.aut_comentario]] };
+    if (s.aut_estado === 'Rechazado') return { clase: 'aviso-mal', titulo: '✕ Autorización rechazada', filas: [['Rechazado por', quien], ['Fecha', dia(s.aut_fecha)], ['Motivo', s.aut_comentario]] };
+    return { clase: 'aviso-alerta', titulo: 'Pendiente de autorización', filas: [['Quién autoriza', s.aut_correo || s.aut_gerente],
+      ['Enviada', s.aut_enviada ? dia(s.aut_enviada) : 'Logística la enviará cuando tenga la cotización']] };
+  }
   function autorizacion(s) {
-    return h('section', { class: 'tarjeta' },
-      h('div', { class: 'cabecera' }, h('h2', { style: 'margin:0' }, 'Autorización de Gerente de Área'),
-        h('span', { class: 'pill ' + (AUT_CLASE[s.aut_estado] || '') }, s.aut_estado)),
-      h('p', { class: 'gris chico', style: 'margin:8px 0 12px' }, 'Solicitud con menos de 48 horas de anticipación: pueden aplicarse sobrecostos.'),
-      h('dl', { class: 'datos' }, [['Nombre del Gerente', s.aut_gerente], ['Estatus', s.aut_estado], ['Fecha de autorización', dia(s.aut_fecha)],
-        ['Comentario o evidencia', s.aut_comentario], ['Registró', s.aut_registro]].filter(function (d) { return d[1]; }).map(function (d) {
-        return h('div', null, h('dt', null, d[0]), h('dd', { style: 'white-space:pre-wrap' }, d[1]));
-      })));
+    var e = estadoAutorizacion(s);
+    if (!e) return null;
+    return h('div', { class: 'aviso ' + e.clase + ' autorizacion' }, h('p', null, h('b', null, e.titulo), s.aut_motivo ? h('span', { class: 'chico' }, ' · ' + s.aut_motivo) : null),
+      h('dl', { class: 'datos' }, e.filas.filter(function (d) { return d[1]; }).map(function (d) { return h('div', null, h('dt', null, d[0]), h('dd', null, d[1])); })),
+      s.costo_cotizado ? h('p', { class: 'chico', style: 'margin-top:8px' }, 'Costo / cotización: ' + s.costo_cotizado) : null);
+  }
+  /* Expediente del folio: solicitud → cotización → autorización → salida, más evidencias y otros documentos.
+     subir(clase, files): si se pasa, cada bloque permite agregar archivos al mismo folio. */
+  var BLOQUES = [['cotizacion', 'Cotización'], ['autorizacion', 'Autorización'], ['salida', 'Salida'], ['evidencia', 'Evidencias'], ['', 'Otros documentos']];
+  function expediente(s, subir) {
+    var lista = function (clase) {
+      var arch = s.archivos.filter(function (a) { return (a.clase || '') === clase; });
+      return arch.length ? h('ul', { class: 'archivos' }, arch.map(function (a) {
+        return h('li', null, h('a', { href: a.url, target: '_blank', rel: 'noopener' }, a.nombre), h('span', { class: 'gris chico' }, tamano(a.tamano) + ' · ' + a.autor + ' · ' + dia(a.fecha)));
+      })) : null;
+    };
+    return h('section', { class: 'tarjeta expediente' }, h('h2', null, 'Expediente del servicio'),
+      h('p', { class: 'gris chico' }, 'Todo en el folio ' + s.folio + ': solicitud → cotización → autorización → salida.'),
+      BLOQUES.map(function (b) {
+        var archivos = lista(b[0]), extra = b[0] === 'autorizacion' ? autorizacion(s) : null;
+        if (b[0] === 'evidencia' && !archivos) return null;
+        if (b[0] === '' && !archivos && !subir) return null;
+        var input = null;
+        if (subir) {
+          input = h('input', { type: 'file', multiple: true, class: 'entrada', 'aria-label': 'Agregar ' + b[1].toLowerCase() });
+          input.addEventListener('change', function () { if (input.files.length) { input.disabled = true; subir(b[0], Array.prototype.slice.call(input.files)); } });
+        }
+        var vacio = !archivos && !extra ? h('p', { class: 'gris chico', style: 'margin:0' }, b[0] === 'autorizacion' ? 'No requiere autorización.' : 'Pendiente.') : null;
+        return h('div', { class: 'exp-bloque' }, h('h3', null, b[1]), extra, archivos, vacio,
+          input ? h('label', { class: 'exp-subir chico' }, h('span', null, 'Agregar ' + (b[0] === '' ? 'documento' : b[1].toLowerCase())), input) : null);
+      }));
   }
 
   /* Archivos: los enlaces «#archivo:FOLIO:ID» se abren armando el archivo desde la base. */
   document.addEventListener('click', function (ev) {
-    var a = ev.target.closest && ev.target.closest('a[href^="#archivo:"]');
+    var a = ev.target.closest && ev.target.closest('a[href^="#archivo:"], a[href^="#autorizacion:"]');
     if (!a) return;
     ev.preventDefault();
     var p = a.getAttribute('href').split(':');
     var ventana = window.open('', '_blank');
     if (ventana) ventana.document.write('<p style="font-family:sans-serif">Abriendo archivo…</p>');
-    run('archivo', decodeURIComponent(p[1]), p[2]).then(function (r) {
+    run(p[0] === '#autorizacion' ? 'autorizacionArchivo' : 'archivo', decodeURIComponent(p[1]), p[2]).then(function (r) {
       return fetch(r.dataUrl).then(function (x) { return x.blob(); }).then(function (blob) {
         var url = URL.createObjectURL(blob);
         if (ventana) ventana.location.href = url;
@@ -187,6 +231,6 @@ window.U = (function () {
     }).catch(function (e) { if (ventana) ventana.close(); toast(e.message, true); });
   });
 
-  return { h: h, mount: mount, devolucion: devolucion, paquetes: paquetes, fechas: fechas, articulos: articulos, detalle: detalle, autorizacion: autorizacion, run: run, leerArchivo: leerArchivo, toast: toast, ocupado: ocupado, dia: dia,
+  return { h: h, mount: mount, devolucion: devolucion, paquetes: paquetes, fechas: fechas, articulos: articulos, detalle: detalle, autorizacion: autorizacion, expediente: expediente, run: run, leerArchivo: leerArchivo, toast: toast, ocupado: ocupado, dia: dia,
     fechaHora: fechaHora, tamano: tamano, estado: estado, logos: logos, pasos: pasos };
 })();

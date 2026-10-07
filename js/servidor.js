@@ -4,10 +4,10 @@
  * La seguridad real la imponen las reglas de Firestore (firestore.rules, bloque «Solicitudes de movimientos»).
  */
 import * as fb from './firebase-sdk.js?v=13';
-import * as C from './catalogos.js?v=6';
+import * as C from './catalogos.js?v=7';
 
 const CFG = window.CP_CONFIG || {};
-const COL = { config: 'sm_config', admins: 'sm_admins', inv: 'sm_invitaciones', sol: 'sm_solicitudes', correos: 'sm_correos' };
+const COL = { config: 'sm_config', admins: 'sm_admins', inv: 'sm_invitaciones', sol: 'sm_solicitudes', correos: 'sm_correos', aut: 'sm_autorizaciones' };
 const ZONA = 'America/Mexico_City';
 const MAX_MB = 5;
 const CHUNK = 700000;
@@ -56,12 +56,18 @@ const esFecha = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
 function sumarDias(ymd, n) { const d = new Date(ymd + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
 /* Menos de 48 horas de anticipación: la fecha requerida cae antes de pasado mañana (se calcula por día, sin horas). */
 const fueraDeTiempo = (fecha) => esFecha(fecha) && fecha < sumarDias(hoy(), C.DIAS_ANTICIPACION);
-const conRecoleccion = (tipo) => tipo === 'entrega_recoleccion' || C.CON_RECOLECCION.includes(tipo);
 const productoNombre = (s) => (s.producto_tipo === 'Otro' ? s.producto_otro || 'Otro' : s.producto_tipo || '');
 const movimientoNombre = (s) => (s.tipo === 'otro' && s.tipo_otro ? 'Otro: ' + s.tipo_otro : tipoNombre(s.tipo));
-function articulosTexto(s) {
-  return [].concat(s.articulos || []).map((a) => a.cantidad + ' × ' + a.producto + (a.descripcion ? ' · ' + a.descripcion : '')).join('\n');
+/* Un renglón de especificaciones: «10 × Caja de producto · 60 × 40 × 35 cm · 12 kg c/u (120 kg)». */
+function lineaArticulo(a) {
+  const n = Number(a.cantidad) || 0, kg = Number(a.peso) || 0, r = (x) => Math.round(x * 10) / 10;
+  return a.cantidad + ' × ' + (a.producto ? a.producto + (a.descripcion ? ' · ' + a.descripcion : '') : a.descripcion) +
+    (a.largo ? ' · ' + a.largo + ' × ' + a.ancho + ' × ' + a.alto + ' cm' : '') +
+    (kg ? ' · ' + kg + ' kg c/u' + (n > 1 ? ' (' + r(n * kg) + ' kg)' : '') : '');
 }
+const articulosTexto = (s) => [].concat(s.articulos || []).map(lineaArticulo).join('\n');
+const lugarTexto = (s, pre) => (s[pre + '_nombre'] ? s[pre + '_nombre'] + (s[pre + '_ciudad'] ? ', ' + s[pre + '_ciudad'] : '') : s[pre + '_direccion'] || '');
+const servicioNombre = (f) => (f === 'Camión / unidad' ? 'Unidad dedicada' : f || '');
 const base = () => new URL('./', location.href).href;
 const urlPortal = () => base();
 const urlPanel = (folio) => new URL('admin.html' + (folio ? '?folio=' + encodeURIComponent(folio) : ''), base()).href;
@@ -113,6 +119,9 @@ function tarjeta(c) {
       c.datos.map((r) => '<tr><td style="padding:8px 14px;font-size:12.5px;color:#5F666C;width:38%">' + esc(r[0]) + '</td><td style="padding:8px 14px;font-size:14px;font-weight:700;color:#0D1114">' + esc(r[1]).replace(/\n/g, '<br>') + '</td></tr>').join('') + '</table>' : '') +
     (c.boton ? '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:18px 0 4px"><tr><td style="border-radius:8px;background:#B45309"><a href="' + esc(c.boton.url) +
       '" style="display:inline-block;padding:12px 22px;color:#fff;text-decoration:none;font-weight:700;font-size:14px">' + esc(c.boton.texto) + ' &rarr;</a></td></tr></table>' : '') +
+    ((c.botones || []).length ? '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:18px 0 4px"><tr>' + c.botones.map((b) =>
+      '<td style="border-radius:8px;background:' + esc(b.color || '#B45309') + '"><a href="' + esc(b.url) + '" style="display:inline-block;padding:13px 24px;color:#fff;text-decoration:none;font-weight:700;font-size:15px">' +
+      esc(b.texto) + '</a></td><td style="width:12px"></td>').join('') + '</tr></table>' : '') +
     (c.nota ? '<p style="margin:14px 0 0;font-size:12.5px;color:#5F666C">' + esc(c.nota) + '</p>' : '') +
     '</td></tr><tr><td style="padding:12px 26px;background:#FAF8F5;font-size:12px;color:#5F666C">CESANTONI | Somos Logística · Solicitudes de movimientos · mensaje automático</td></tr></table></div>';
 }
@@ -120,6 +129,7 @@ function textoPlano(c) {
   const l = [c.titulo, c.folio ? 'Folio: ' + c.folio : '', ''].concat(c.parrafos || []);
   (c.datos || []).forEach((r) => l.push(r[0] + ': ' + r[1]));
   if (c.boton) l.push('', c.boton.texto + ': ' + c.boton.url);
+  (c.botones || []).forEach((b, i) => { if (!i) l.push(''); l.push(b.texto + ': ' + b.url); });
   if (c.nota) l.push('', c.nota);
   return l.join('\n');
 }
@@ -163,7 +173,8 @@ async function avisos() {
   try { const d = await getOne(ref(COL.config, 'avisos')); return ((d && d.correos) || []).filter(correoOk); } catch (e) { return []; }
 }
 
-/* ------------------------------------------------------------------ validación (misma lógica que la versión probada) */
+/* ------------------------------------------------------------------ validación */
+const linkOk = (v) => !v || /^https?:\/\/\S+$/i.test(v);
 function validar(d) {
   const errores = {};
   C.CAMPOS.forEach((c) => {
@@ -173,65 +184,65 @@ function validar(d) {
     else if (v.length > c[3]) errores[c[0]] = 'Máximo ' + c[3] + ' caracteres.';
   });
   if (d.correo && !correoOk(d.correo)) errores.correo = 'Escribe un correo válido.';
-  if (d.producto_tipo && !C.PRODUCTOS.some((x) => x[0] === d.producto_tipo)) errores.producto_tipo = 'Elige un tipo de producto.';
+  if (d.producto_tipo && !C.PRODUCTOS.some((x) => x[0] === d.producto_tipo)) errores.producto_tipo = 'Elige qué envías.';
   if (d.producto_tipo === 'Otro' && !d.producto_otro) errores.producto_otro = 'Obligatorio.';
   if (d.producto_tipo !== 'Otro') d.producto_otro = '';
   if (d.tipo && !C.TIPOS.some((t) => t[0] === d.tipo)) errores.tipo = 'Elige un tipo.';
   if (d.tipo === 'otro' && !d.tipo_otro) errores.tipo_otro = 'Obligatorio.';
   if (d.tipo !== 'otro') d.tipo_otro = '';
-  if (d.prioridad && !C.PRIORIDADES.includes(d.prioridad)) errores.prioridad = 'Elige el tipo de solicitud.';
-  if (d.forma_envio && !C.FORMAS_ENVIO.includes(d.forma_envio)) errores.forma_envio = 'Elige una forma de envío.';
+  if (d.forma_envio && !C.FORMAS_ENVIO.includes(d.forma_envio)) errores.forma_envio = 'Elige el tipo de servicio.';
   if (d.tipo === 'devolucion' && !C.MOTIVOS_DEVOLUCION.includes(d.dev_motivo)) errores.dev_motivo = 'Elige el motivo de la devolución.';
+  ['origen_link', 'destino_link'].forEach((k) => { if (!linkOk(d[k])) errores[k] = 'Pega el link completo (empieza con https://).'; });
   if (d.costo_absorbe && !C.COSTOS.includes(d.costo_absorbe)) errores.costo_absorbe = 'Elige quién absorbe el costo.';
-  if (['Otro departamento', 'Otro'].includes(d.costo_absorbe) && !d.costo_detalle) errores.costo_detalle = 'Obligatorio.';
-  if (!['Otro departamento', 'Otro'].includes(d.costo_absorbe)) d.costo_detalle = '';
+  if (d.costo_absorbe === 'Otro' && !d.costo_detalle) errores.costo_detalle = 'Obligatorio.';
+  if (d.costo_absorbe !== 'Otro') d.costo_detalle = '';
   d.horario = d.horario === 'Sí' ? 'Sí' : '';
-  /* Fechas: fecha requerida o «Fecha abierta». */
+  if (d.acepta_condiciones !== 'Sí') errores.acepta_condiciones = 'Acepta las condiciones para enviar.';
+  /* Fechas tentativas: recolección y entrega, o «Fecha abierta». */
   d.fecha_abierta = d.fecha_abierta === 'Sí' ? 'Sí' : '';
-  if (d.fecha_abierta) d.fecha_requerida = '';
-  else if (!esFecha(d.fecha_requerida)) errores.fecha_requerida = 'Elige la fecha o marca «Fecha abierta».';
-  else if (d.fecha_requerida < hoy()) errores.fecha_requerida = 'La fecha ya pasó.';
-  /* Recolección: obligatoria en «Entrega y posterior recolección»; opcional en entregas; no aplica en lo demás. */
-  if (d.tipo === 'entrega_recoleccion') d.recoleccion = 'Sí';
-  else if (!C.CON_RECOLECCION.includes(d.tipo)) d.recoleccion = '';
-  else if (!['Sí', 'No'].includes(d.recoleccion)) errores.recoleccion = 'Indica si el material regresa.';
-  d.recoleccion_abierta = d.recoleccion === 'Sí' && d.recoleccion_abierta === 'Sí' ? 'Sí' : '';
-  if (d.recoleccion !== 'Sí' || d.recoleccion_abierta) d.fecha_recoleccion = '';
-  else if (!esFecha(d.fecha_recoleccion)) errores.fecha_recoleccion = 'Elige la fecha de recolección o márcala como abierta.';
-  else if (d.fecha_requerida && d.fecha_recoleccion < d.fecha_requerida) errores.fecha_recoleccion = 'Debe ser igual o posterior a la fecha de entrega.';
-  /* Menos de 48 horas: urgente y con autorización del Gerente de Área. */
-  if (fueraDeTiempo(d.fecha_requerida)) {
-    d.prioridad = 'Urgente';
-    if (!d.aut_gerente) errores.aut_gerente = 'Obligatorio.';
-  } else d.aut_gerente = '';
+  if (d.fecha_abierta) { d.fecha_requerida = ''; d.fecha_entrega = ''; }
+  else {
+    if (!esFecha(d.fecha_requerida)) errores.fecha_requerida = 'Elige la fecha o marca «Fecha abierta».';
+    else if (d.fecha_requerida < hoy()) errores.fecha_requerida = 'La fecha ya pasó.';
+    if (!esFecha(d.fecha_entrega)) errores.fecha_entrega = 'Elige la fecha o marca «Fecha abierta».';
+    else if (d.fecha_requerida && d.fecha_entrega < d.fecha_requerida) errores.fecha_entrega = 'Debe ser igual o posterior a la recolección.';
+  }
+  /* Entrega y posterior recolección: fecha en que se recoge de regreso. */
+  d.recoleccion = d.tipo === 'entrega_recoleccion' ? 'Sí' : '';
+  d.recoleccion_abierta = d.recoleccion && (d.recoleccion_abierta === 'Sí' || d.fecha_abierta) ? 'Sí' : '';
+  if (!d.recoleccion || d.recoleccion_abierta) d.fecha_recoleccion = '';
+  else if (!esFecha(d.fecha_recoleccion)) errores.fecha_recoleccion = 'Elige la fecha o márcala como abierta.';
+  else if (d.fecha_entrega && d.fecha_recoleccion < d.fecha_entrega) errores.fecha_recoleccion = 'Debe ser igual o posterior a la entrega.';
+  /* Autorización: si CESANTONI absorbe el costo o si faltan menos de 48 horas. */
+  const fuera = fueraDeTiempo(d.fecha_requerida), cesantoni = d.costo_absorbe === C.COSTO_AUTORIZA;
+  d.prioridad = fuera ? 'Urgente' : 'Programado';
+  d.aut_motivo = [cesantoni ? 'Costo absorbido por CESANTONI' : '', fuera ? 'Solicitud con menos de 48 horas de anticipación' : ''].filter(Boolean).join(' · ');
+  if (d.aut_motivo) { if (!correoOk(d.aut_correo)) errores.aut_correo = 'Escribe el correo de quien autoriza.'; else d.aut_correo = d.aut_correo.toLowerCase(); }
+  else d.aut_correo = '';
   return errores;
 }
-/* Artículos: cada renglón con producto, cantidad y descripción. */
-function articulos(lista) {
-  lista = [].concat(lista || []).filter((x) => x && (String(x.producto || '').trim() || String(x.cantidad || '').trim() || String(x.descripcion || '').trim()));
-  if (!lista.length) throw fallo('Agrega al menos un artículo con su cantidad.');
-  if (lista.length > 30) throw fallo('Máximo 30 artículos por solicitud.');
-  return lista.map((x, i) => {
-    const n = Number(String(x.cantidad).replace(',', '.')), producto = String(x.producto || '').trim().slice(0, 80);
-    if (!producto) throw fallo('Artículo ' + (i + 1) + ': escribe qué producto es.');
-    if (!(n > 0 && n <= 99999)) throw fallo('Artículo ' + (i + 1) + ': escribe la cantidad (número mayor a cero).');
-    return { producto, cantidad: String(n), descripcion: String(x.descripcion || '').trim().slice(0, 300) };
-  });
-}
-function paquetes(lista) {
-  lista = [].concat(lista || []).slice(0, 20);
-  const lineas = []; let total = 0, peso = 0, vol = 0;
-  lista.forEach((p, i) => {
-    const n = Number(p && p.cantidad), l = Number(p && p.largo), a = Number(p && p.ancho), h = Number(p && p.alto), kg = Number(p && p.peso);
-    const fila = 'Paquete ' + (i + 1) + ': ';
-    if (!(n >= 1 && n <= 999 && Math.floor(n) === n)) throw fallo(fila + 'la cantidad debe ser un número entero de 1 a 999.');
-    [[l, 'largo'], [a, 'ancho'], [h, 'alto']].forEach((m) => { if (!(m[0] > 0 && m[0] <= 400)) throw fallo(fila + 'escribe el ' + m[1] + ' en centímetros (de 1 a 400).'); });
-    if (!(kg > 0 && kg <= 2000)) throw fallo(fila + 'escribe el peso por paquete en kilos.');
-    total += n; peso += n * kg; vol += n * l * a * h / C.FACTOR_VOLUMETRICO;
-    lineas.push(n + ' × ' + l + ' × ' + a + ' × ' + h + ' cm, ' + kg + ' kg c/u');
+/* Especificaciones agrupadas: un renglón por grupo de paquetes o material con las mismas características. */
+function especificaciones(lista, paqueteria) {
+  lista = [].concat(lista || []).filter((x) => x && ['cantidad', 'largo', 'ancho', 'alto', 'peso', 'descripcion'].some((k) => String(x[k] || '').trim()));
+  if (!lista.length) throw fallo('Agrega al menos un grupo con cantidad y descripción.');
+  if (lista.length > 30) throw fallo('Máximo 30 grupos por solicitud.');
+  const num = (v) => { const t = String(v === undefined || v === null ? '' : v).replace(',', '.').trim(); return t === '' ? NaN : Number(t); };
+  let total = 0, peso = 0, vol = 0;
+  const filas = lista.map((x, i) => {
+    const g = 'Grupo ' + (i + 1) + ': ', n = num(x.cantidad), l = num(x.largo), a = num(x.ancho), h = num(x.alto), kg = num(x.peso);
+    const descripcion = String(x.descripcion || '').trim().slice(0, 200);
+    if (!(n >= 1 && n <= 99999 && Math.floor(n) === n)) throw fallo(g + 'la cantidad debe ser un número entero mayor a cero.');
+    if (!descripcion) throw fallo(g + 'escribe la descripción del material.');
+    const conMedidas = !(isNaN(l) && isNaN(a) && isNaN(h));
+    if ((paqueteria || conMedidas) && ![l, a, h].every((m) => m > 0 && m <= 2000)) throw fallo(g + 'escribe largo, ancho y alto en centímetros.');
+    if ((paqueteria || !isNaN(kg)) && !(kg > 0 && kg <= 30000)) throw fallo(g + 'escribe el peso por pieza en kilos.');
+    total += n;
+    if (kg > 0) peso += n * kg;
+    if (conMedidas) vol += n * l * a * h / C.FACTOR_VOLUMETRICO;
+    return Object.assign({ cantidad: String(n), descripcion }, conMedidas ? { largo: String(l), ancho: String(a), alto: String(h) } : {}, kg > 0 ? { peso: String(kg) } : {});
   });
   const r = (x) => Math.round(x * 10) / 10;
-  return { texto: lineas.join('\n'), total, peso: r(peso), vol: r(vol) };
+  return { filas, texto: filas.map(lineaArticulo).join('\n'), total, peso: r(peso), vol: r(vol) };
 }
 
 /* ------------------------------------------------------------------ portal: quien solicita */
@@ -240,8 +251,8 @@ export function configPortal() {
   return { areas: C.AREAS, tipos: C.TIPOS, estados: C.ESTADOS, abiertos: C.ABIERTOS, cancelables: C.CANCELABLES,
     formas_envio: C.FORMAS_ENVIO, paqueteria: C.PAQUETERIA, factor_volumetrico: C.FACTOR_VOLUMETRICO,
     motivos_devolucion: C.MOTIVOS_DEVOLUCION, checklist: C.CHECKLIST_DEVOLUCION, max_mb: MAX_MB, hoy: hoy(),
-    limite_programado: sumarDias(hoy(), C.DIAS_ANTICIPACION), productos: C.PRODUCTOS, reutilizables: C.REUTILIZABLES,
-    con_recoleccion: C.CON_RECOLECCION, prioridades: C.PRIORIDADES, costos: C.COSTOS, aut_estados: C.AUT_ESTADOS,
+    limite_programado: sumarDias(hoy(), C.DIAS_ANTICIPACION), productos: C.PRODUCTOS, costos: C.COSTOS, costo_autoriza: C.COSTO_AUTORIZA,
+    aut_estados: C.AUT_ESTADOS, condiciones: C.CONDICIONES,
     sesion: u ? { correo: u.email } : null };
 }
 
@@ -261,7 +272,7 @@ export async function recuperarClave(correo) {
 
 function resumen(s) {
   return { folio: s.folio, creada: s.creada, actualizada: s.actualizada, estado: s.estado, prioridad: prioridad(s.prioridad), tipo: s.tipo,
-    tipo_nombre: movimientoNombre(s), producto: productoNombre(s), fecha_requerida: s.fecha_requerida || '', fecha_abierta: s.fecha_abierta || '', origen: s.origen_nombre + ', ' + s.origen_ciudad, destino: s.destino_nombre + ', ' + s.destino_ciudad };
+    tipo_nombre: movimientoNombre(s), producto: productoNombre(s), fecha_requerida: s.fecha_requerida || '', fecha_abierta: s.fecha_abierta || '', origen: lugarTexto(s, 'origen'), destino: lugarTexto(s, 'destino') };
 }
 export async function misSolicitudes() {
   const u = auth.currentUser;
@@ -272,7 +283,7 @@ export async function misSolicitudes() {
 async function archivosDe(folio) {
   return (await getAll(col(COL.sol, folio, 'archivos'))).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)))
     .map((a) => ({ id: a.id, fecha: a.fecha, autor: a.autor, nombre: a.nombre, tamano: a.tamano, mime: a.mime, evidencia: !!a.evidencia,
-      cotizacion: a.clase === 'cotizacion',
+      cotizacion: a.clase === 'cotizacion', clase: a.clase || (a.evidencia ? 'evidencia' : ''),
       url: '#archivo:' + encodeURIComponent(folio) + ':' + a.id }));
 }
 const OCULTOS = ['uid', 'n', 'categorizacion', 'responsable', 'responsable_correo'];
@@ -284,6 +295,7 @@ async function vistaPublica(folio) {
   out.tipo_nombre = movimientoNombre(s);
   out.producto = productoNombre(s);
   out.prioridad = prioridad(s.prioridad);
+  out.forma_envio = servicioNombre(s.forma_envio);
   out.seguimiento = (await getAll(fb.query(col(COL.sol, folio, 'seguimiento'), fb.where('visible', '==', true))))
     .sort((a, b) => String(a.fecha).localeCompare(String(b.fecha))).map((m) => ({ fecha: m.fecha, autor: m.autor, estado: m.estado, mensaje: m.mensaje }));
   out.archivos = await archivosDe(folio);
@@ -297,10 +309,16 @@ export async function consultarSolicitud(folio) {
 
 const diaTexto = (ymd) => (esFecha(ymd) ? ymd.slice(8, 10) + '/' + ymd.slice(5, 7) + '/' + ymd.slice(0, 4) : '');
 function fechasTexto(s) {
-  const entrega = ['envio', 'entrega_recoleccion', 'mercadotecnia'].includes(s.tipo) ? 'Fecha de entrega' : 'Fecha requerida';
-  const out = [[entrega, s.fecha_abierta === 'Sí' ? 'Fecha abierta' : diaTexto(s.fecha_requerida)]];
-  if (s.recoleccion === 'Sí') out.push(['Fecha de recolección', s.recoleccion_abierta === 'Sí' ? 'Fecha abierta' : diaTexto(s.fecha_recoleccion)]);
-  else if (s.recoleccion === 'No') out.push(['Recolección', 'No requiere recolección']);
+  const abierta = s.fecha_abierta === 'Sí', out = [];
+  if (s.fecha_entrega !== undefined) {
+    out.push(['Fecha tentativa de recolección', abierta ? 'Fecha abierta' : diaTexto(s.fecha_requerida)],
+      ['Fecha tentativa de entrega', abierta ? 'Fecha abierta' : diaTexto(s.fecha_entrega)]);
+    if (s.recoleccion === 'Sí') out.push(['Recolección posterior', s.recoleccion_abierta === 'Sí' ? 'Fecha abierta' : diaTexto(s.fecha_recoleccion)]);
+  } else {
+    out.push([['envio', 'entrega_recoleccion', 'mercadotecnia'].includes(s.tipo) ? 'Fecha de entrega' : 'Fecha requerida', abierta ? 'Fecha abierta' : diaTexto(s.fecha_requerida)]);
+    if (s.recoleccion === 'Sí') out.push(['Fecha de recolección', s.recoleccion_abierta === 'Sí' ? 'Fecha abierta' : diaTexto(s.fecha_recoleccion)]);
+    else if (s.recoleccion === 'No') out.push(['Recolección', 'No requiere recolección']);
+  }
   return out.filter((x) => x[1]);
 }
 const costoTexto = (s) => (s.costo_absorbe ? s.costo_absorbe + (s.costo_detalle ? ': ' + s.costo_detalle : '') : '');
@@ -314,9 +332,7 @@ export async function crearSolicitud(datos, cuenta) {
   d.dev_checklist = d.tipo === 'devolucion' ? marcados.join('\n') : '';
   if (d.tipo !== 'devolucion') d.dev_motivo = '';
   if (auth.currentUser) d.correo = auth.currentUser.email;
-  const arts = articulos(datos.articulos);
-  const paq = paquetes(String(d.forma_envio || '').trim() === C.PAQUETERIA ? datos.paquetes : []);
-  if (String(d.forma_envio || '').trim() === C.PAQUETERIA && !paq.total) throw fallo('Agrega al menos un paquete con cantidad, medidas y peso.');
+  const esp = especificaciones(datos.especificaciones, String(d.forma_envio || '').trim() === C.PAQUETERIA);
   const errores = validar(d);
   if (Object.keys(errores).length) throw fallo('Revisa los campos marcados: ' + Object.keys(errores).map((k) => C.CAMPOS.find((c) => c[0] === k)[1]).join(', ') + '.');
   d.correo = d.correo.toLowerCase();
@@ -344,27 +360,27 @@ export async function crearSolicitud(datos, cuenta) {
     if (cs.exists()) tx.update(cref, { n, ultimo: folio }); else tx.set(cref, { n, ultimo: folio });
     tx.set(ref(COL.sol, folio), Object.assign({}, d, { folio, n, uid, estado: 'recibida', creada: t, actualizada: t, cerrada: '',
       dev_cumple: d.tipo === 'devolucion' ? (marcados.length === C.CHECKLIST_DEVOLUCION.length ? 'Sí' : 'No') : '',
-      paquetes: paq.texto, paq_total: paq.total ? String(paq.total) : '', paq_peso_kg: paq.total ? String(paq.peso) : '', paq_vol_kg: paq.total ? String(paq.vol) : '',
-      articulos: arts, fuera_tiempo: fuera ? 'Sí' : '', aut_estado: fuera ? C.AUT_PENDIENTE : '' }));
+      articulos: esp.filas, paquetes: esp.texto, paq_total: String(esp.total), paq_peso_kg: esp.peso ? String(esp.peso) : '', paq_vol_kg: esp.vol ? String(esp.vol) : '',
+      fuera_tiempo: fuera ? 'Sí' : '', aut_estado: d.aut_motivo ? C.AUT_PENDIENTE : '', condiciones_fecha: t }));
     tx.set(ref(COL.sol, folio, 'seguimiento', nuevoId()), { fecha: t, autor: d.solicitante, autor_tipo: 'solicitante', visible: true, estado: 'recibida', mensaje: 'Solicitud creada.' });
   });
   const sol = await getOne(ref(COL.sol, folio));
-  const fechas = fechasTexto(sol);
-  await enviarCorreo({ plantilla: 'solicitante', folio, para: d.correo, asunto: 'Solicitud ' + folio + ' recibida · ' + movimientoNombre(sol),
-    titulo: 'Recibimos tu solicitud', parrafos: ['Hola ' + d.solicitante + ', Logística ya tiene tu solicitud de ' + movimientoNombre(sol).toLowerCase() + '. Te avisaremos por este medio cada avance.']
-      .concat(fuera ? ['Importante: tu solicitud se hizo con menos de 48 horas de anticipación. Podrán aplicarse sobrecostos y se requiere la autorización del Gerente de Área (' + sol.aut_gerente + ').'] : []),
+  const fechas = fechasTexto(sol), ruta = lugarTexto(sol, 'origen') + ' → ' + lugarTexto(sol, 'destino');
+  const avisoAut = sol.aut_motivo ? ['Requiere autorización (' + sol.aut_motivo.toLowerCase() + '). Logística enviará la solicitud de autorización a ' + sol.aut_correo + '.'] : [];
+  await enviarCorreo({ plantilla: 'solicitante', folio, para: d.correo, asunto: 'Solicitud ' + folio + ' recibida · ' + productoNombre(sol),
+    titulo: 'Recibimos tu solicitud', parrafos: ['Hola ' + d.solicitante + ', Logística ya tiene tu solicitud. Te avisaremos por este medio cada avance.']
+      .concat(fuera ? ['Importante: tu solicitud se hizo con menos de 48 horas de anticipación. Podrán aplicarse sobrecostos y se requiere la autorización del Gerente de Área.'] : [], avisoAut),
     datos: [['Folio', folio]].concat(claveNueva ? [['Tu correo de acceso', d.correo], ['Tu clave', claveNueva]] : [])
-      .concat([['Producto', productoNombre(sol)], ['Movimiento', movimientoNombre(sol)]], fechas,
-        [['Ruta', d.origen_ciudad + ' → ' + d.destino_ciudad], ['Forma de envío', d.forma_envio]]),
+      .concat([['Qué envías', productoNombre(sol)], ['Movimiento', movimientoNombre(sol)], ['Tipo de servicio', sol.forma_envio]], fechas, [['Ruta', ruta]]),
     boton: { texto: 'Ver mis solicitudes', url: urlPortal() },
     nota: claveNueva ? 'Con tu correo y esta clave consultas todas tus solicitudes. Si la pierdes, en el portal elige «Olvidé mi clave».' : '' });
   await enviarCorreo({ plantilla: 'interno', folio, para: await avisos(), etiqueta: sol.prioridad === 'Urgente' ? 'URGENTE' : 'NUEVA SOLICITUD',
     asunto: (sol.prioridad === 'Urgente' ? 'URGENTE · ' : '') + 'Nueva solicitud ' + folio + ' · ' + productoNombre(sol) + ' · ' + movimientoNombre(sol),
-    titulo: productoNombre(sol) + ' · ' + movimientoNombre(sol), parrafos: [sol.solicitante + ' (' + sol.area + ') registró una solicitud.', 'Descripción: ' + sol.motivo]
-      .concat(fuera ? ['Menos de 48 horas de anticipación: puede aplicar sobrecosto. Autorización del Gerente de Área (' + sol.aut_gerente + ') pendiente.'] : []),
-    datos: [['Tipo de solicitud', sol.prioridad], ['Artículos', articulosTexto(sol)], ['Costo', costoTexto(sol)]].concat(fechas, [['Forma de envío', sol.forma_envio]],
-      [['Ruta', sol.origen_nombre + ', ' + sol.origen_ciudad + ' → ' + sol.destino_nombre + ', ' + sol.destino_ciudad]])
-      .concat(sol.paq_total ? [['Paquetes', sol.paq_total + ' · ' + sol.paq_peso_kg + ' kg (volumétrico ' + sol.paq_vol_kg + ' kg)\n' + sol.paquetes]] : [])
+    titulo: productoNombre(sol) + ' · ' + movimientoNombre(sol), parrafos: [sol.solicitante + ' (' + sol.area + ') registró una solicitud.']
+      .concat(sol.motivo ? ['Descripción: ' + sol.motivo] : [], fuera ? ['Menos de 48 horas de anticipación: puede aplicar sobrecosto.'] : [],
+        sol.aut_motivo ? ['Requiere autorización: ' + sol.aut_motivo + '. Envíala desde el panel a ' + sol.aut_correo + ' cuando tengas la cotización.'] : []),
+    datos: [['Tipo de solicitud', sol.prioridad], ['Tipo de servicio', sol.forma_envio], ['Especificaciones', sol.paquetes],
+      ['Total', sol.paq_total + ' piezas' + (sol.paq_peso_kg ? ' · ' + sol.paq_peso_kg + ' kg' : '')], ['Costo', costoTexto(sol)]].concat(fechas, [['Ruta', ruta]])
       .concat(sol.horario === 'Sí' ? [['Cita', 'Se requiere cita para entregar o recoger']] : [])
       .concat(sol.tipo === 'devolucion' ? [['Devolución', sol.dev_motivo + ' · ' + (sol.dev_cumple === 'Sí' ? 'cumple todos los puntos' : 'NO cumple todos los puntos: revisar')]] : []),
     boton: { texto: 'Abrir en el panel', url: urlPanel(folio) } });
@@ -379,7 +395,7 @@ async function guardarArchivo(folio, archivo, autor) {
   for (let i = 0; i < partes; i++) await fb.setDoc(ref(COL.sol, folio, 'archivos', id, 'partes', String(i).padStart(3, '0')), { d: b64.slice(i * CHUNK, (i + 1) * CHUNK) });
   const nombre = String(archivo.nombre).replace(/[^\wÁÉÍÓÚÜÑáéíóúüñ .()-]/g, '_').slice(0, 140);
   await fb.setDoc(ref(COL.sol, folio, 'archivos', id), { fecha: ahora(), autor, nombre, mime: archivo.mime || 'application/octet-stream',
-    tamano: Number(archivo.tamano) || 0, partes, evidencia: archivo.clase === 'evidencia', clase: ['evidencia', 'cotizacion'].includes(archivo.clase) ? archivo.clase : '' });
+    tamano: Number(archivo.tamano) || 0, partes, evidencia: archivo.clase === 'evidencia', clase: C.CLASES_ARCHIVO.includes(archivo.clase) ? archivo.clase : '' });
 }
 export async function subirArchivo(folio, archivo) {
   const s = await consultarSolicitud(folio);
@@ -519,8 +535,9 @@ export async function adminDatos() {
     costo: costoTexto(s), fecha_requerida: s.fecha_requerida || '', fecha_abierta: s.fecha_abierta || '', recoleccion: s.recoleccion || '',
     fecha_recoleccion: s.fecha_recoleccion || '', recoleccion_abierta: s.recoleccion_abierta || '', fuera_tiempo: s.fuera_tiempo || '',
     aut_estado: s.aut_estado || '', aut_gerente: s.aut_gerente || '', area: s.area, solicitante: s.solicitante, correo: s.correo, cliente: s.cliente, referencia: s.referencia, cita: s.horario || '',
-    origen: s.origen_nombre + ', ' + s.origen_ciudad, destino: s.destino_nombre + ', ' + s.destino_ciudad, dev_motivo: s.dev_motivo || '',
-    dev_cumple: s.dev_cumple || '', forma_envio: s.forma_envio || '', paq_total: s.paq_total || '', paq_peso_kg: s.paq_peso_kg || '',
+    origen: lugarTexto(s, 'origen'), destino: lugarTexto(s, 'destino'), dev_motivo: s.dev_motivo || '',
+    dev_cumple: s.dev_cumple || '', forma_envio: servicioNombre(s.forma_envio),
+    aut_correo: s.aut_correo || '', aut_enviada: s.aut_enviada || '', aut_por: s.aut_por || s.aut_gerente || '', aut_motivo: s.aut_motivo || '', paq_total: s.paq_total || '', paq_peso_kg: s.paq_peso_kg || '',
     folio_cstext: s.folio_cstext || '', categorizacion: s.categorizacion || '', responsable: s.responsable || '', transportista: s.transportista || '',
     unidad_asignada: s.unidad_asignada || '', guia: s.guia || '', fecha_programada: s.fecha_programada || '' }))
     .sort((x, y) => String(y.creada).localeCompare(String(x.creada)));
@@ -535,7 +552,7 @@ export async function adminDetalle(_t, folio) {
   if (!s) throw fallo('No existe la solicitud ' + folio + '.');
   const interno = await getOne(ref(COL.sol, folio, 'interno', 'datos')).catch(() => null);
   const out = Object.assign({}, s, { notas_internas: (interno && interno.notas_internas) || '', tipo_nombre: movimientoNombre(s),
-    producto: productoNombre(s), prioridad: prioridad(s.prioridad) });
+    producto: productoNombre(s), prioridad: prioridad(s.prioridad), forma_envio: servicioNombre(s.forma_envio) });
   out.seguimiento = (await getAll(col(COL.sol, folio, 'seguimiento'))).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)))
     .map((m) => ({ fecha: m.fecha, autor: m.autor, visible: m.visible !== false, estado: m.estado, mensaje: m.mensaje }));
   out.archivos = await archivosDe(folio);
@@ -556,7 +573,7 @@ export async function adminActualizar(_t, folio, cambios) {
   if ((cambios.estado === 'rechazada' || cambios.estado === 'cancelada') && cambios.estado !== antes && !mensaje) throw fallo('Escribe el motivo.');
   const team = await equipo();
   if (cambios.responsable && !team.some((x) => x.usuario === cambios.responsable)) throw fallo('Responsable no válido.');
-  ['fecha_programada', 'fecha_requerida', 'fecha_recoleccion', 'aut_fecha'].forEach((k) => {
+  ['fecha_programada', 'fecha_requerida', 'fecha_entrega', 'fecha_recoleccion', 'aut_fecha'].forEach((k) => {
     if (cambios[k] && !esFecha(cambios[k])) throw fallo('Fecha no válida.');
   });
   if (cambios.aut_estado && !C.AUT_ESTADOS.includes(cambios.aut_estado)) throw fallo('Estatus de autorización no válido.');
@@ -572,16 +589,18 @@ export async function adminActualizar(_t, folio, cambios) {
     if (otro) throw fallo('El folio ' + cambios.folio_cstext + ' ya está en la solicitud ' + otro.folio + '.');
   }
   const t = ahora(), patch = { actualizada: t };
-  ['folio_cstext', 'categorizacion', 'transportista', 'unidad_asignada', 'guia', 'fecha_programada', 'aut_gerente', 'aut_comentario'].forEach((k) => {
+  ['folio_cstext', 'categorizacion', 'transportista', 'unidad_asignada', 'guia', 'fecha_programada', 'aut_gerente', 'aut_comentario', 'costo_cotizado'].forEach((k) => {
     if (cambios[k] !== undefined) patch[k] = String(cambios[k]).trim().slice(0, k === 'aut_comentario' ? 1000 : 160);
   });
   /* Asignar la fecha a una solicitud con «Fecha abierta» sin crear una nueva. */
   if (cambios.fecha_requerida) { patch.fecha_requerida = cambios.fecha_requerida; patch.fecha_abierta = ''; }
+  if (cambios.fecha_entrega) { patch.fecha_entrega = cambios.fecha_entrega; patch.fecha_abierta = ''; }
   if (cambios.fecha_recoleccion && s.recoleccion === 'Sí') { patch.fecha_recoleccion = cambios.fecha_recoleccion; patch.recoleccion_abierta = ''; }
   if (cambios.aut_estado !== undefined && s.aut_estado && cambios.aut_estado !== s.aut_estado) {
     patch.aut_estado = cambios.aut_estado;
     patch.aut_fecha = cambios.aut_estado === C.AUT_PENDIENTE ? '' : (cambios.aut_fecha || hoy());
     patch.aut_registro = a.nombre;
+    if (cambios.aut_estado !== C.AUT_PENDIENTE) patch.aut_por = s.aut_por || patch.aut_gerente || s.aut_gerente || a.nombre;
   } else if (cambios.aut_fecha && s.aut_estado) patch.aut_fecha = cambios.aut_fecha;
   if (cambios.responsable !== undefined) {
     const r = team.find((x) => x.usuario === cambios.responsable);
@@ -592,6 +611,11 @@ export async function adminActualizar(_t, folio, cambios) {
   patch.cerrada = C.ABIERTOS.includes(estado) ? '' : (s.cerrada || t);
   const b = fb.writeBatch(db);
   b.update(ref(COL.sol, folio), patch);
+  /* Si Logística registra la autorización a mano, la liga enviada por correo deja de servir. */
+  if (patch.aut_estado && patch.aut_estado !== C.AUT_PENDIENTE) {
+    (await getAll(donde(COL.aut, 'folio', folio))).filter((x) => x.estado === C.AUT_PENDIENTE)
+      .forEach((x) => b.update(ref(COL.aut, x.id), { estado: 'Registrada en el panel', reemplazada: t }));
+  }
   if (cambios.notas_internas !== undefined) b.set(ref(COL.sol, folio, 'interno', 'datos'), { notas_internas: String(cambios.notas_internas).slice(0, 2000), actualizado: t });
   const autCambio = patch.aut_estado !== undefined;
   const autTexto = autCambio ? 'Autorización del Gerente de Área: ' + patch.aut_estado + '.' : '';
@@ -675,4 +699,101 @@ export async function adminGuardarUsuario(_t, datos) {
   if (uid) await fb.setDoc(ref(COL.admins, uid), { nombre, correo, rol, activo: true, cambiar_clave: true, creado_en: t, ultimo_acceso: '' });
   else await fb.setDoc(ref(COL.inv, correo), { nombre, rol, creado_en: t, por: a.id });
   return (await adminConfig()).usuarios;
+}
+
+/* ------------------------------------------------------------------ autorización del costo por correo
+   Logística envía a quien autoriza un correo con una liga secreta (un token por envío). La liga abre autorizar.html,
+   donde se confirma «Autorizar costo» o «Rechazar» sin iniciar sesión. La respuesta queda en sm_autorizaciones/{token}
+   y en el folio (aut_estado, aut_por, aut_fecha) como evidencia. Las reglas solo dejan responder una vez y con ese token. */
+const urlAutorizar = (t, d) => new URL('autorizar.html?t=' + encodeURIComponent(t) + (d ? '&d=' + d : ''), base()).href;
+function resumenAutorizacion(s, costo) {
+  return [['Folio', s.folio], ['Solicitante', s.solicitante], ['Departamento', s.area], ['Qué se envía', productoNombre(s)],
+    ['Movimiento', movimientoNombre(s)], ['Origen', s.origen_direccion || lugarTexto(s, 'origen')], ['Destino', s.destino_direccion || lugarTexto(s, 'destino')],
+    ['Tipo de servicio', servicioNombre(s.forma_envio)], ['Cantidad, dimensiones y peso', articulosTexto(s) || s.paquetes],
+    ['Peso total', s.paq_peso_kg ? s.paq_peso_kg + ' kg' : '']].concat(fechasTexto(s),
+    [['Quién absorbe el costo', costoTexto(s)], ['Costo / cotización', costo || 'Ver cotización adjunta'], ['Motivo de la autorización', s.aut_motivo]])
+    .filter((x) => x[1]).map((x) => ({ k: x[0], v: String(x[1]) }));
+}
+export async function adminEnviarAutorizacion(_t, folio, opciones) {
+  const a = await sesionPanel(true);
+  opciones = opciones || {};
+  const s = await getOne(ref(COL.sol, folio));
+  if (!s) throw fallo('No existe la solicitud ' + folio + '.');
+  if (s.aut_estado && s.aut_estado !== C.AUT_PENDIENTE) throw fallo('La autorización ya tiene respuesta: ' + s.aut_estado + '.');
+  const correo = String(opciones.correo || s.aut_correo || '').trim().toLowerCase();
+  if (!correoOk(correo)) throw fallo('Escribe el correo de quien autoriza el costo.');
+  const costo = String(opciones.costo !== undefined ? opciones.costo : s.costo_cotizado || '').trim().slice(0, 160);
+  const t = ahora(), token = azar(32, 'abcdefghijklmnopqrstuvwxyz0123456789');
+  const cotizaciones = (await getAll(col(COL.sol, folio, 'archivos'))).filter((x) => x.clase === 'cotizacion').slice(-3);
+  const notificar = [...new Set([s.correo, correoOk(s.responsable_correo) ? s.responsable_correo : null].concat(correoOk(s.responsable_correo) ? [] : await avisos()))].filter(correoOk);
+  const motivo = s.aut_motivo || 'Autorización de costo';
+  const resumenAut = resumenAutorizacion(Object.assign({}, s, { aut_motivo: motivo }), costo);
+  const b = fb.writeBatch(db);
+  (await getAll(donde(COL.aut, 'folio', folio))).filter((x) => x.estado === C.AUT_PENDIENTE)
+    .forEach((x) => b.update(ref(COL.aut, x.id), { estado: 'Reemplazada', reemplazada: t }));
+  b.set(ref(COL.aut, token), { folio, correo, estado: C.AUT_PENDIENTE, motivo, resumen: resumenAut, costo, enviada: t, enviada_por: a.nombre, notificar,
+    archivos: cotizaciones.map((x) => ({ id: x.id, nombre: x.nombre, mime: x.mime, tamano: x.tamano || 0 })) });
+  b.update(ref(COL.sol, folio), { aut_estado: C.AUT_PENDIENTE, aut_correo: correo, aut_enviada: t, aut_motivo: motivo, costo_cotizado: costo, actualizada: t });
+  b.set(ref(COL.sol, folio, 'seguimiento', nuevoId()), { fecha: t, autor: a.nombre + ' (Logística)', autor_tipo: 'logistica', visible: true, estado: s.estado,
+    mensaje: 'Se envió la solicitud de autorización de costo a ' + correo + '.' });
+  await b.commit();
+  /* Copia de la cotización para que quien autoriza la vea desde la liga, sin cuenta. */
+  for (const x of cotizaciones) {
+    const partes = await getAll(col(COL.sol, folio, 'archivos', x.id, 'partes'));
+    for (const p of partes) await fb.setDoc(ref(COL.aut, token, 'archivos', x.id, 'partes', p.id), { d: p.d });
+  }
+  const reg = await enviarCorreo({ plantilla: 'solicitante', folio, para: correo, etiqueta: 'AUTORIZACIÓN DE COSTO',
+    asunto: 'Autorización de costo · ' + folio + ' · ' + productoNombre(s), titulo: '¿Autorizas el costo de este servicio?',
+    parrafos: [s.solicitante + ' (' + s.area + ') solicitó un servicio de Logística que requiere tu autorización.', 'Motivo: ' + motivo + '.'],
+    datos: resumenAut.filter((x) => x.k !== 'Folio' && x.k !== 'Motivo de la autorización').map((x) => [x.k, x.v]),
+    botones: [{ texto: '✓ Autorizar costo', url: urlAutorizar(token, 'autorizar'), color: '#17693F' }, { texto: '✕ Rechazar', url: urlAutorizar(token, 'rechazar'), color: '#B42318' }],
+    nota: 'Al dar clic se abre la plataforma para confirmar tu respuesta. La respuesta queda registrada en el folio como evidencia de la autorización.' });
+  const out = await adminDetalle(null, folio);
+  out.envio = reg;
+  return out;
+}
+
+async function autorizacionDoc(token) {
+  token = String(token || '').trim();
+  if (!/^[a-z0-9]{32}$/.test(token)) throw fallo('Esta liga de autorización no es válida.');
+  const a = await getOne(ref(COL.aut, token)).catch(() => null);
+  if (!a) throw fallo('Esta liga de autorización no es válida.');
+  return a;
+}
+export async function autorizacionVer(token) {
+  const a = await autorizacionDoc(token);
+  return { folio: a.folio, correo: a.correo, estado: a.estado, motivo: a.motivo, resumen: a.resumen || [], costo: a.costo, enviada: a.enviada,
+    respondida: a.respondida || '', nombre: a.nombre || '', comentario: a.comentario || '',
+    archivos: (a.archivos || []).map((x) => Object.assign({}, x, { url: '#autorizacion:' + a.id + ':' + x.id })) };
+}
+export async function autorizacionArchivo(token, id) {
+  const a = await autorizacionDoc(token), meta = (a.archivos || []).find((x) => x.id === id);
+  if (!meta) throw fallo('No encontramos el archivo.');
+  const partes = (await getAll(col(COL.aut, a.id, 'archivos', id, 'partes'))).sort((x, y) => x.id.localeCompare(y.id));
+  return { nombre: meta.nombre, mime: meta.mime, dataUrl: 'data:' + meta.mime + ';base64,' + partes.map((p) => p.d).join('') };
+}
+export async function autorizacionResponder(token, decision, nombre, comentario) {
+  const a = await autorizacionDoc(token);
+  if (a.estado !== C.AUT_PENDIENTE) {
+    throw fallo(['Reemplazada', 'Registrada en el panel'].includes(a.estado) ? 'Esta liga ya no está vigente: Logística envió una más reciente o registró la autorización.'
+      : 'Esta autorización ya fue respondida: ' + a.estado + '.');
+  }
+  const estado = decision === 'autorizar' ? 'Autorizado' : decision === 'rechazar' ? 'Rechazado' : '';
+  if (!estado) throw fallo('Elige autorizar o rechazar.');
+  nombre = String(nombre || '').trim().slice(0, 120);
+  comentario = String(comentario || '').trim().slice(0, 1000);
+  if (estado === 'Rechazado' && !comentario) throw fallo('Escribe el motivo del rechazo.');
+  const t = ahora(), b = fb.writeBatch(db);
+  b.update(ref(COL.aut, a.id), { estado, respondida: t, nombre, comentario });
+  b.update(ref(COL.sol, a.folio), { aut_estado: estado, aut_por: a.correo, aut_nombre: nombre, aut_fecha: t.slice(0, 10), aut_ref: a.id,
+    aut_comentario: comentario, actualizada: t });
+  await b.commit();
+  const quien = (nombre ? nombre + ' · ' : '') + a.correo;
+  await enviarCorreo({ plantilla: 'interno', folio: a.folio, para: a.notificar || [], etiqueta: estado === 'Autorizado' ? 'COSTO AUTORIZADO' : 'AUTORIZACIÓN RECHAZADA',
+    asunto: a.folio + (estado === 'Autorizado' ? ' · Costo autorizado' : ' · Autorización rechazada'),
+    titulo: estado === 'Autorizado' ? '✓ Costo autorizado' : '✕ Autorización rechazada',
+    parrafos: [(estado === 'Autorizado' ? 'Autorizado por: ' : 'Rechazado por: ') + quien].concat(comentario ? ['Comentario: ' + comentario] : []),
+    datos: [['Folio', a.folio], ['Fecha', diaTexto(t.slice(0, 10))], ['Costo / cotización', a.costo || '—']],
+    boton: { texto: 'Ver la solicitud', url: urlPortal() } });
+  return autorizacionVer(a.id);
 }

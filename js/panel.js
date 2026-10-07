@@ -1,5 +1,5 @@
 /* Panel de Logística (Liga 2): base de solicitudes. Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=6';
+import * as API from './servidor.js?v=7';
 window.API = API;
 (function () {
     'use strict';
@@ -135,7 +135,8 @@ window.API = API;
       ['abiertas', 'Abiertas', function (s) { return cfg.abiertos.indexOf(s.estado) >= 0; }],
       ['nuevas', 'Nuevas sin revisar', function (s) { return s.estado === 'recibida'; }],
       ['urgentes', 'Urgentes abiertas', function (s) { return s.prioridad === 'Urgente' && cfg.abiertos.indexOf(s.estado) >= 0; }],
-      ['autorizacion', 'Pendientes de autorización', function (s) { return s.aut_estado === 'Pendiente de autorización' && cfg.abiertos.indexOf(s.estado) >= 0; }],
+      ['por_enviar', 'Por enviar a autorización', function (s) { return s.aut_estado === 'Pendiente de autorización' && !s.aut_enviada && cfg.abiertos.indexOf(s.estado) >= 0; }],
+      ['autorizacion', 'Esperando autorización', function (s) { return s.aut_estado === 'Pendiente de autorización' && !!s.aut_enviada && cfg.abiertos.indexOf(s.estado) >= 0; }],
       ['fecha_abierta', 'Con fecha abierta', function (s) { return s.fecha_abierta === 'Sí' && cfg.abiertos.indexOf(s.estado) >= 0; }],
       ['devoluciones', 'Devoluciones que no cumplen', devolucionPendiente],
       ['sin_cstext', 'Sin folio CSTEXT', function (s) { return !s.folio_cstext && ['programada', 'en_transito', 'completada'].indexOf(s.estado) >= 0; }],
@@ -270,15 +271,12 @@ window.API = API;
         U.pasos(cfg, s.estado),
         h('div', { style: 'height:12px' }),
         info([['Solicita', s.solicitante + ' · ' + s.area], ['Correo', s.correo], ['Producto', s.producto], ['Movimiento', s.tipo_nombre],
-          ['Tipo de solicitud', s.prioridad], ['Forma de envío', s.forma_envio]].concat(U.fechas(s))));
+          ['Tipo de solicitud', s.prioridad], ['Tipo de servicio', s.forma_envio]].concat(U.fechas(s))));
 
-      var ruta = h('section', { class: 'tarjeta' }, h('h2', null, 'Ruta y detalle'),
-        info([['Lugar de salida', s.origen_nombre + '\n' + s.origen_ciudad], ['Lugar de entrega', s.destino_nombre + '\n' + s.destino_ciudad]]),
-        h('div', { style: 'height:12px' }),
-        info(U.detalle(s)));
-      var autorizacion = s.aut_estado ? U.autorizacion(s) : null;
+      var ruta = h('section', { class: 'tarjeta' }, h('h2', null, 'Ruta y detalle'), info(U.detalle(s)));
+
       var devolucion = s.tipo === 'devolucion' ? U.devolucion(cfg, s) : null;
-      var paquetes = s.paq_total ? U.paquetes(s) : null;
+      var paquetes = s.paq_total && !(s.articulos || []).some(function (a) { return a.largo || a.peso; }) ? U.paquetes(s) : null;
 
       var hilo = h('section', { class: 'tarjeta' }, h('h2', null, 'Seguimiento'),
         h('ul', { class: 'hilo' }, s.seguimiento.slice().reverse().map(function (m) {
@@ -300,12 +298,10 @@ window.API = API;
       var guia = h('input', { class: 'entrada', value: s.guia || '', maxlength: 160 });
       var fprog = h('input', { class: 'entrada', type: 'date', value: s.fecha_programada || '' });
       /* Fechas de quien solicita: Logística puede asignarlas después (por ejemplo, si quedó «Fecha abierta»). */
+      var nuevo = s.fecha_entrega !== undefined;
       var freq = h('input', { class: 'entrada', type: 'date', value: s.fecha_requerida || '' });
+      var fent = nuevo ? h('input', { class: 'entrada', type: 'date', value: s.fecha_entrega || '' }) : null;
       var frec = s.recoleccion === 'Sí' ? h('input', { class: 'entrada', type: 'date', value: s.fecha_recoleccion || '' }) : null;
-      var autGer = h('input', { class: 'entrada', value: s.aut_gerente || '', maxlength: 120 });
-      var autEst = lista(datos.aut_estados.map(function (x) { return [x, x]; }), s.aut_estado);
-      var autFecha = h('input', { class: 'entrada', type: 'date', value: s.aut_fecha || '' });
-      var autCom = h('textarea', { class: 'entrada', rows: 2, maxlength: 1000, placeholder: 'Ej.: Autorizó por correo el 14/10.' }); autCom.value = s.aut_comentario || '';
       var notas = h('textarea', { class: 'entrada', rows: 2, maxlength: 2000 }); notas.value = s.notas_internas || '';
       var mensaje = h('textarea', { class: 'entrada', rows: 3, maxlength: 2000, placeholder: 'Ej.: Programada para el jueves con Transportes X.' });
       var visible = h('input', { type: 'checkbox', checked: true });
@@ -317,14 +313,11 @@ window.API = API;
           campo('Folio CSTEXT', cstext), campo('Categorización', categ),
           campo('Transportista', transp), campo('Unidad asignada', unidad),
           campo('Guía o referencia', guia), campo('Fecha programada', fprog),
-          campo(s.fecha_abierta === 'Sí' ? 'Fecha requerida (está abierta: asígnala aquí)' : 'Fecha requerida', freq),
-          frec ? campo(s.recoleccion_abierta === 'Sí' ? 'Fecha de recolección (abierta: asígnala aquí)' : 'Fecha de recolección', frec) : null,
+          campo((nuevo ? 'Fecha tentativa de recolección' : 'Fecha requerida') + (s.fecha_abierta === 'Sí' ? ' (abierta: asígnala aquí)' : ''), freq),
+          fent ? campo('Fecha tentativa de entrega' + (s.fecha_abierta === 'Sí' ? ' (abierta: asígnala aquí)' : ''), fent) : null,
+          frec ? campo((nuevo ? 'Recolección posterior' : 'Fecha de recolección') + (s.recoleccion_abierta === 'Sí' ? ' (abierta: asígnala aquí)' : ''), frec) : null,
           campo('Notas internas (no las ve quien solicita)', notas, 'todo'),
           campo('Mensaje', mensaje, 'todo'), catalogos),
-        s.aut_estado ? h('fieldset', { class: 'grupo-aut' }, h('legend', null, 'Autorización de Gerente de Área'),
-          h('div', { class: 'rejilla' }, campo('Nombre del Gerente', autGer), campo('Estatus de autorización', autEst),
-            campo('Fecha de autorización', autFecha), campo('Comentario o evidencia', autCom, 'todo')),
-          h('p', { class: 'gris chico', style: 'margin:8px 0 0' }, 'Mientras no esté «Autorizado», la solicitud no puede pasar a Programada, En tránsito ni Completada. Adjunta la evidencia en Archivos.')) : null,
         h('p', { class: 'gris chico' }, 'Solo seguimiento: los importes se registran en «Fletes 2026» con el folio CSTEXT.'),
         h('div', { style: 'margin:10px 0 14px;display:grid;gap:6px' },
           h('label', { class: 'chico' }, visible, ' El mensaje lo ve quien solicita (si no, queda como nota interna)'),
@@ -337,8 +330,8 @@ window.API = API;
         var cambios = { estado: estado.value, responsable: resp.value, transportista: transp.value, unidad_asignada: unidad.value,
           guia: guia.value, fecha_programada: fprog.value, folio_cstext: cstext.value, categorizacion: categ.value,
           fecha_requerida: freq.value !== (s.fecha_requerida || '') ? freq.value : undefined,
+          fecha_entrega: fent && fent.value !== (s.fecha_entrega || '') ? fent.value : undefined,
           fecha_recoleccion: frec && frec.value !== (s.fecha_recoleccion || '') ? frec.value : undefined };
-        if (s.aut_estado) Object.assign(cambios, { aut_gerente: autGer.value, aut_estado: autEst.value, aut_fecha: autFecha.value, aut_comentario: autCom.value });
         run('adminActualizar', s.folio, Object.assign(cambios, {
           notas_internas: notas.value, mensaje: mensaje.value,
           visible: visible.checked, notificar: avisar.checked }))
@@ -346,23 +339,48 @@ window.API = API;
           .catch(function (e) { U.ocupado(guardar, false); fallo(e); });
       });
 
-      var subir = h('input', { type: 'file', multiple: true, class: 'entrada' });
-      subir.addEventListener('change', function () {
-        var archivos = Array.prototype.slice.call(subir.files);
-        subir.disabled = true;
-        archivos.reduce(function (p, f) {
-          return p.then(function () { return U.leerArchivo(f, cfg.max_mb).then(function (a) { return run('adminSubirArchivo', s.folio, a); }); });
-        }, Promise.resolve()).then(function () { U.toast('Archivos agregados.'); detalle(s.folio); })
+      /* Expediente del folio: cada bloque permite agregar su documento (cotización, autorización, salida…). */
+      var archivos = U.expediente(s, function (clase, lista) {
+        lista.reduce(function (p, f) {
+          return p.then(function () { return U.leerArchivo(f, cfg.max_mb).then(function (a) { a.clase = clase; return run('adminSubirArchivo', s.folio, a); }); });
+        }, Promise.resolve()).then(function () { U.toast('Archivos agregados al folio.'); detalle(s.folio); })
           .catch(function (e) { fallo(e); detalle(s.folio); });
       });
-      var archivos = h('section', { class: 'tarjeta' }, h('h2', null, 'Archivos'),
-        s.archivos.length ? h('ul', { class: 'archivos' }, s.archivos.map(function (a) {
-          return h('li', null, h('span', null, h('a', { href: a.url, target: '_blank', rel: 'noopener' }, a.nombre),
-            a.evidencia ? h('span', { class: 'pill e-informacion', style: 'margin-left:6px' }, 'Evidencia') : null,
-            a.cotizacion ? h('span', { class: 'pill e-programada', style: 'margin-left:6px' }, 'Cotización') : null),
-            h('span', { class: 'gris chico' }, U.tamano(a.tamano) + ' · ' + a.autor));
-        })) : h('p', { class: 'gris' }, 'Sin archivos.'),
-        h('div', { style: 'margin-top:10px' }, h('label', { class: 'chico', style: 'font-weight:600' }, 'Agregar (evidencia, POD, cotización…)'), subir));
+
+      /* Autorización de costo: envío por correo con «Autorizar costo» / «Rechazar», o registro manual. */
+      var autCorreo = h('input', { class: 'entrada', type: 'email', value: s.aut_correo || '', maxlength: 160, placeholder: 'gerente@cesantoni.com.mx' });
+      var autCosto = h('input', { class: 'entrada', value: s.costo_cotizado || '', maxlength: 160, placeholder: 'Ej.: $8,500 + IVA (cotización Paqueteexpress)' });
+      var nCot = s.archivos.filter(function (a) { return a.clase === 'cotizacion'; }).length;
+      var enviarAut = h('button', { class: 'btn btn-pri btn-chico', type: 'button' }, s.aut_enviada ? 'Reenviar a autorización' : 'Enviar a autorización por correo');
+      enviarAut.addEventListener('click', function () {
+        U.ocupado(enviarAut, true, 'Enviando…');
+        run('adminEnviarAutorizacion', s.folio, { correo: autCorreo.value, costo: autCosto.value }).then(function (r) {
+          U.toast(r.envio && r.envio.estado === 'enviado' ? 'Solicitud de autorización enviada a ' + r.aut_correo + '.' : 'Se registró, pero el correo no salió: ' + ((r.envio && r.envio.error) || 'revisa «Correos enviados».'), !(r.envio && r.envio.estado === 'enviado'));
+          pintarDetalle(r);
+        }).catch(function (e) { U.ocupado(enviarAut, false); fallo(e); });
+      });
+      var autEst = lista(datos.aut_estados.map(function (x) { return [x, x]; }), s.aut_estado);
+      var autQuien = h('input', { class: 'entrada', value: s.aut_gerente || '', maxlength: 120, placeholder: 'Nombre o correo' });
+      var autFecha = h('input', { class: 'entrada', type: 'date', value: s.aut_fecha || '' });
+      var autCom = h('textarea', { class: 'entrada', rows: 2, maxlength: 1000, placeholder: 'Ej.: Autorizó por teléfono; correo adjunto en Autorización.' }); autCom.value = s.aut_comentario || '';
+      var guardarAut = h('button', { class: 'btn btn-chico', type: 'button' }, 'Guardar autorización');
+      guardarAut.addEventListener('click', function () {
+        U.ocupado(guardarAut, true, 'Guardando…');
+        run('adminActualizar', s.folio, { aut_estado: autEst.value, aut_gerente: autQuien.value, aut_fecha: autFecha.value, aut_comentario: autCom.value })
+          .then(function (r) { U.toast('Autorización guardada.'); pintarDetalle(r); }).catch(function (e) { U.ocupado(guardarAut, false); fallo(e); });
+      });
+      var pendiente = !s.aut_estado || s.aut_estado === 'Pendiente de autorización';
+      var tarjetaAut = h('section', { class: 'tarjeta' }, h('h2', null, 'Autorización de costo'),
+        U.autorizacion(s) || h('p', { class: 'gris chico' }, 'Esta solicitud no pidió autorización. Si hace falta, envíala desde aquí.'),
+        pendiente ? h('div', { class: 'rejilla', style: 'margin-top:10px' },
+          campo('Correo de quien autoriza', autCorreo, 'todo'), campo('Costo / cotización (va en el correo)', autCosto, 'todo'),
+          h('p', { class: 'gris chico todo', style: 'margin:0' }, nCot ? 'Se incluirá ' + (nCot === 1 ? 'la cotización adjunta' : 'las ' + nCot + ' cotizaciones adjuntas') + ' del expediente.'
+            : 'Aún no hay cotización en el expediente: puedes agregarla abajo antes de enviar.'),
+          h('div', { class: 'todo' }, enviarAut)) : null,
+        s.aut_estado ? h('details', { class: 'aut-manual' }, h('summary', null, 'Registrar a mano (por ejemplo, si autorizó por teléfono)'),
+          h('div', { class: 'rejilla', style: 'margin-top:10px' }, campo('Estatus', autEst), campo('Autorizó', autQuien),
+            campo('Fecha', autFecha), campo('Comentario', autCom, 'todo'), h('div', { class: 'todo' }, guardarAut))) : null,
+        s.aut_estado ? h('p', { class: 'gris chico', style: 'margin:10px 0 0' }, 'Mientras no esté «Autorizado», la solicitud no puede pasar a Programada, En tránsito ni Completada.') : null);
 
       var correos = h('section', { class: 'tarjeta' }, h('h2', null, 'Correos enviados'),
         s.correos.length ? h('ul', { class: 'archivos' }, s.correos.slice().reverse().map(function (c) {
@@ -370,7 +388,7 @@ window.API = API;
             h('span', { class: 'gris chico', style: 'white-space:nowrap' }, (c.estado === 'enviado' ? '✓ ' : '✗ ') + U.fechaHora(c.fecha)));
         })) : h('p', { class: 'gris' }, 'Sin correos.'));
 
-      mount(main, volver, cabecera, h('div', { class: 'detalle' }, h('div', null, autorizacion, devolucion, paquetes, ruta, hilo, correos), h('div', null, form, archivos)));
+      mount(main, volver, cabecera, h('div', { class: 'detalle' }, h('div', null, devolucion, paquetes, ruta, archivos, hilo, correos), h('div', null, tarjetaAut, form)));
     }
 
     /* ---------------------------------------------------------------- configuración */

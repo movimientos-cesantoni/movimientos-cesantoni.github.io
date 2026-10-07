@@ -198,3 +198,31 @@ td .sub { font-size: 12px; color: var(--gris); }
 /* panel: autorización del Gerente de Área */
 .grupo-aut { border: 1px solid #F0D78E; background: var(--alerta-bg); border-radius: 8px; padding: 12px 14px 14px; margin: 14px 0 0; min-width: 0; }
 .grupo-aut legend { font-family: var(--titulos); font-weight: 600; font-size: 14px; padding: 0 6px; }
+
+/* especificaciones agrupadas (cantidad × medidas × peso) */
+.grupos { display: grid; gap: 10px; }
+.grupo-medidas { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.grupo-medidas .grupo-desc { grid-column: 1 / -1; }
+.grupo-total { font-size: 12px; color: var(--ok); font-weight: 600; }
+@media (max-width: 760px) { .grupo-medidas { grid-template-columns: repeat(2, minmax(0, 1fr)); } .grupo-medidas .paq-campo:first-child { grid-column: 1 / -1; } }
+
+/* condiciones del servicio */
+.condiciones { background: var(--fondo); border: 1px solid var(--linea); border-left: 3px solid var(--naranja); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; }
+.condiciones p { margin: 0; font-size: 12.5px; color: var(--gris); line-height: 1.55; }
+
+/* expediente del folio */
+.exp-bloque { border-top: 1px solid var(--linea); padding: 12px 0 4px; }
+.exp-bloque h3 { margin: 0 0 6px; }
+.exp-subir { display: grid; gap: 4px; margin-top: 8px; font-weight: 600; }
+.exp-subir .entrada { min-height: 0; padding: 6px 8px; font-weight: 400; }
+.autorizacion { margin: 4px 0 8px; }
+.autorizacion .datos { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.aut-manual { margin-top: 12px; font-size: 14px; }
+.aut-manual summary { cursor: pointer; color: var(--naranja-osc); font-weight: 600; }
+
+/* página de autorización */
+.btn-ok { background: var(--ok); border-color: var(--ok); color: #fff; min-height: 48px; padding: 10px 24px; font-size: 16px; }
+.btn-ok:hover { background: #0F5130; }
+.btn-mal { background: #fff; border-color: var(--mal); color: var(--mal); min-height: 48px; padding: 10px 24px; font-size: 16px; }
+.btn-mal:hover { background: var(--mal-bg); }
+.decision { border-color: var(--naranja); box-shadow: inset 0 0 0 1px var(--naranja); }
