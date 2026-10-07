@@ -1,5 +1,5 @@
 /* Formulario y seguimiento de solicitudes (Liga 1). Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=17';
+import * as API from './servidor.js?v=18';
 window.API = API;
 (function () {
     'use strict';
@@ -307,7 +307,9 @@ window.API = API;
       /* ---------- 3 y 4 · ¿De dónde? / ¿A dónde? (misma lógica) */
       function ubicacion(pre, titulo, intro) {
         return h('div', { class: 'paso' }, seccion(titulo, intro,
-          texto(pre + '_direccion', 'Ubicación / dirección', { req: true, max: 300, todo: true, ejemplo: 'Calle, número, colonia, ciudad y CP (o nombre del lugar)' }),
+          texto(pre + '_ciudad', 'Ciudad o municipio', { req: true, max: 80, ejemplo: pre === 'origen' ? 'Ej. Calera' : 'Ej. Gómez Palacio' }),
+          lista(pre + '_estado', 'Estado', cfg.estados_mx, { req: true }),
+          texto(pre + '_direccion', 'Ubicación / dirección', { req: true, max: 300, todo: true, ejemplo: 'Calle, número, colonia y CP (o nombre del lugar)' }),
           texto(pre + '_link', 'Link de ubicación', { tipo: 'url', max: 500, todo: true, ejemplo: 'https://maps.app.goo.gl/…',
             ayuda: 'Opcional. Pega el link de Google Maps o similar.', modo: 'url' }),
           texto(pre + '_contacto', 'Nombre del contacto', { max: 160 }),
@@ -575,7 +577,7 @@ window.API = API;
               return h('div', null, h('dt', null, x[0]), h('dd', { style: 'white-space:pre-wrap' }, x[1]));
             })));
         };
-        var lugar = function (pre) { return [d[pre + '_direccion'], d[pre + '_contacto'] ? 'Contacto: ' + [d[pre + '_contacto'], d[pre + '_telefono']].filter(Boolean).join(' · ') : ''].filter(Boolean).join('\n'); };
+        var lugar = function (pre) { return [[d[pre + '_ciudad'], d[pre + '_estado']].filter(Boolean).join(', '), d[pre + '_direccion'], d[pre + '_contacto'] ? 'Contacto: ' + [d[pre + '_contacto'], d[pre + '_telefono']].filter(Boolean).join(' · ') : ''].filter(Boolean).join('\n'); };
         mount(cajaResumen,
           h('section', { class: 'tarjeta' }, h('h2', null, 'Revisa tu solicitud'),
             h('p', { class: 'gris chico', style: 'margin:0' }, 'Confirma que todo esté correcto. Si algo falta, usa «Editar».')),
@@ -641,7 +643,7 @@ window.API = API;
         ['solicitante', 'area', 'telefono', 'motivo', 'observaciones', 'dev_motivo', 'costo_detalle', 'horario'].forEach(function (k) { poner(k, s[k]); });
         ['origen', 'destino'].forEach(function (p) {
           poner(p + '_direccion', s[p + '_direccion'] || [s[p + '_nombre'], s[p + '_ciudad']].filter(Boolean).join(', '));
-          ['_link', '_contacto', '_telefono'].forEach(function (x) { poner(p + x, s[p + x]); });
+          ['_ciudad', '_estado', '_link', '_contacto', '_telefono'].forEach(function (x) { poner(p + x, s[p + x]); });
         });
         poner('forma_envio', s.forma_envio === 'Camión / unidad' ? 'Unidad dedicada' : s.forma_envio);
         poner('costo_absorbe', s.costo_absorbe);

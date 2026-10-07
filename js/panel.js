@@ -1,7 +1,7 @@
 /* Panel de Logística (Liga 2): base de solicitudes. Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=17';
-import { libroXlsx, libroBytes, zipArchivos } from './xlsx.js?v=17';
-import { analizarPlantilla, crearGenerador, fechaLarga, aBase64, deBase64 } from './plantilla.js?v=17';
+import * as API from './servidor.js?v=18';
+import { libroXlsx, libroBytes, zipArchivos } from './xlsx.js?v=18';
+import { analizarPlantilla, crearGenerador, fechaLarga, aBase64, deBase64 } from './plantilla.js?v=18';
 window.API = API;
 (function () {
     'use strict';
@@ -315,8 +315,8 @@ window.API = API;
       var cstext = h('input', { class: 'entrada', value: s.folio_cstext || '', maxlength: 20, disabled: !esAdmin, placeholder: 'Es el folio de la solicitud' });
       var monto = h('input', { class: 'entrada', inputmode: 'decimal', value: s.monto ? Number(s.monto).toFixed(2) : '', placeholder: '0.00' });
       var tipoMov = lista(datos.tipos.map(function (t) { return [t[0], t[1]]; }), s.tipo);
-      var oFact = h('input', { class: 'entrada', value: s.origen_fact || '', maxlength: 160, placeholder: s.origen_direccion || 'Ej. CALERA' });
-      var dFact = h('input', { class: 'entrada', value: s.destino_fact || '', maxlength: 160, placeholder: s.destino_direccion || 'Ej. Gómez Palacio, Dgo.' });
+      var oFact = h('input', { class: 'entrada', value: s.origen_fact || '', maxlength: 160, placeholder: 'Ej. CALERA, ZACATECAS' });
+      var dFact = h('input', { class: 'entrada', value: s.destino_fact || '', maxlength: 160, placeholder: 'Ej. GÓMEZ PALACIO, DURANGO' });
       var cliFact = h('input', { class: 'entrada', value: s.cliente_fact || '', maxlength: 160, placeholder: String((s.costo_absorbe === 'Otro' ? s.costo_detalle : s.costo_absorbe) || 'CESANTONI').toUpperCase() });
       var maniobra = lista([['No', 'No'], ['Sí', 'Sí']], s.maniobra || 'No');
       var concepto = lista([['', 'Selecciona…']].concat(datos.conceptos.map(function (c) { return [c, c]; })), s.concepto);
@@ -621,10 +621,12 @@ window.API = API;
       var ver = lista([['pendientes', 'Pendientes de facturar'], ['facturadas', 'Ya facturadas'], ['todas', 'Todas']], filtrosFact.ver);
       [[estatus, 'estatus'], [mes, 'mes'], [ver, 'ver']].forEach(function (x) { x[0].addEventListener('change', function () { filtrosFact[x[1]] = x[0].value; pintar(); }); });
       var cabeceraMes = h('div', { style: 'margin:-4px 0 14px' });
-      var sinPlantilla = datos.plantilla ? null : h('div', { class: 'aviso aviso-info' }, h('p', null, 'Aún no se ha subido la plantilla de movimientos: se descarga la tabla simple por proveedor. ' +
-        (esAdmin ? 'Súbela en Configuración › Plantilla de movimientos.' : 'Pide al administrador que la suba en Configuración.')));
+      var sinPlantilla = datos.plantilla ? null : h('div', { class: 'aviso aviso-alerta', role: 'alert' }, h('p', null, h('b', null, 'Falta subir tu plantilla de movimientos. '),
+        'Mientras no se suba, se descarga la tabla simple por proveedor y no el formato PLANTILLA_MOVIMIENTOS_EXT. ' +
+        (esAdmin ? 'Súbela en Configuración › Plantilla de movimientos.' : 'Pide al administrador que la suba en Configuración.')),
+        esAdmin ? h('button', { class: 'btn btn-pri btn-chico', type: 'button', onclick: function () { configuracion(); } }, 'Ir a subir la plantilla') : null);
       mount(main,
-        encabezado('Facturación', 'Elige el estatus y el mes. Cada proveedor tiene su plantilla, separada en fletes y maniobras. «Descargar todas» baja un ZIP con una carpeta para fletes y otra para maniobras.', [
+        encabezado('Facturación', 'Elige el estatus y el mes. Cada movimiento sale en su formato, por proveedor. «Descargar todas» baja un ZIP con carpetas para fletes, maniobras y paquetería.', [
           h('button', { class: 'btn btn-pri btn-chico', type: 'button', onclick: descargarTodas }, '⬇ Descargar todas (ZIP)'),
           esAdmin ? h('button', { class: 'btn btn-osc btn-chico', type: 'button', onclick: descargarMes }, '⬇ Excel del mes (una hoja por proveedor)') : null,
           h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { cargar().then(facturacion); } }, 'Actualizar')]),

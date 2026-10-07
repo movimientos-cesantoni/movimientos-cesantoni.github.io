@@ -158,7 +158,8 @@ window.U = (function () {
   function articulos(s) { return [].concat(s.articulos || []).map(linea).join('\n'); }
   function enlace(url) { return /^https?:\/\//i.test(url || '') ? h('a', { href: url, target: '_blank', rel: 'noopener' }, 'Abrir ubicación') : ''; }
   function lugar(s, pre) {
-    var nombre = s[pre + '_nombre'] ? s[pre + '_nombre'] + (s[pre + '_ciudad'] ? ', ' + s[pre + '_ciudad'] : '') + '\n' : '';
+    var nombre = s[pre + '_estado'] ? [s[pre + '_ciudad'], s[pre + '_estado']].filter(Boolean).join(', ') + '\n'
+      : s[pre + '_nombre'] ? s[pre + '_nombre'] + (s[pre + '_ciudad'] ? ', ' + s[pre + '_ciudad'] : '') + '\n' : '';
     return nombre + (s[pre + '_direccion'] || '');
   }
   function contacto(s, pre) { return [s[pre + '_contacto'], s[pre + '_telefono']].filter(Boolean).join(' · '); }

@@ -4,7 +4,7 @@
  * La seguridad real la imponen las reglas de Firestore (firestore.rules, bloque «Solicitudes de movimientos»).
  */
 import * as fb from './firebase-sdk.js?v=13';
-import * as C from './catalogos.js?v=17';
+import * as C from './catalogos.js?v=18';
 
 const CFG = window.CP_CONFIG || {};
 const COL = { config: 'sm_config', admins: 'sm_admins', inv: 'sm_invitaciones', sol: 'sm_solicitudes', correos: 'sm_correos', aut: 'sm_autorizaciones' };
@@ -79,7 +79,9 @@ function lineaArticulo(a) {
     (kg ? ' · ' + kg + ' kg c/u' + (n > 1 ? ' (' + r(n * kg) + ' kg)' : '') : '');
 }
 const articulosTexto = (s) => [].concat(s.articulos || []).map(lineaArticulo).join('\n');
-const lugarTexto = (s, pre) => (s[pre + '_nombre'] ? s[pre + '_nombre'] + (s[pre + '_ciudad'] ? ', ' + s[pre + '_ciudad'] : '') : s[pre + '_direccion'] || '');
+/* Ciudad y Estado (solicitudes nuevas); las anteriores muestran su lugar o dirección. */
+const ciudadEstado = (s, pre) => (s[pre + '_estado'] ? [s[pre + '_ciudad'], s[pre + '_estado']].filter(Boolean).join(', ') : '');
+const lugarTexto = (s, pre) => ciudadEstado(s, pre) || (s[pre + '_nombre'] ? s[pre + '_nombre'] + (s[pre + '_ciudad'] ? ', ' + s[pre + '_ciudad'] : '') : s[pre + '_direccion'] || '');
 const servicioNombre = (f) => (f === 'Camión / unidad' ? 'Unidad dedicada' : f || '');
 const base = () => new URL('./', location.href).href;
 const urlPortal = () => base();
@@ -210,6 +212,7 @@ function validar(d) {
   if (d.tipo !== 'otro') d.tipo_otro = '';
   if (d.forma_envio && !C.FORMAS_ENVIO.includes(d.forma_envio)) errores.forma_envio = 'Elige el tipo de servicio.';
   if (d.tipo === 'devolucion' && !C.MOTIVOS_DEVOLUCION.includes(d.dev_motivo)) errores.dev_motivo = 'Elige el motivo de la devolución.';
+  ['origen_estado', 'destino_estado'].forEach((k) => { if (d[k] && !C.ESTADOS_MX.includes(d[k])) errores[k] = 'Elige el Estado de la lista.'; });
   ['origen_link', 'destino_link'].forEach((k) => { if (!linkOk(d[k])) errores[k] = 'Pega el link completo (empieza con https://).'; });
   if (d.costo_absorbe && !C.COSTOS.includes(d.costo_absorbe)) errores.costo_absorbe = 'Elige quién absorbe el costo.';
   if (d.costo_absorbe === 'Otro' && !d.costo_detalle) errores.costo_detalle = 'Obligatorio.';
@@ -269,7 +272,7 @@ export function configPortal() {
   return { areas: CAT.areas, tipos: CAT.tipos, estados: C.ESTADOS, abiertos: C.ABIERTOS, cancelables: C.CANCELABLES,
     formas_envio: C.FORMAS_ENVIO, paqueteria: C.PAQUETERIA, factor_volumetrico: C.FACTOR_VOLUMETRICO,
     motivos_devolucion: C.MOTIVOS_DEVOLUCION, checklist: C.CHECKLIST_DEVOLUCION, max_mb: MAX_MB, hoy: hoy(),
-    limite_programado: sumarDias(hoy(), C.DIAS_ANTICIPACION), productos: CAT.productos, costos: C.COSTOS, costo_autoriza: C.COSTO_AUTORIZA,
+    limite_programado: sumarDias(hoy(), C.DIAS_ANTICIPACION), productos: CAT.productos, estados_mx: C.ESTADOS_MX, costos: C.COSTOS, costo_autoriza: C.COSTO_AUTORIZA,
     aut_estados: C.AUT_ESTADOS, condiciones: C.CONDICIONES,
     sesion: u ? { correo: u.email } : null };
 }
@@ -419,7 +422,7 @@ export async function crearSolicitud(datos, cuenta) {
 export const LEYENDA_BLOQUEO = 'Este folio ya no admite modificaciones porque Logística ya está trabajando en él. Si necesitas un cambio, genera una nueva solicitud con los datos correctos y avisa a Logística por correo indicando este folio y el cambio que necesitas.';
 const MODIFICABLES = ['solicitante', 'area', 'telefono', 'tipo', 'prioridad', 'forma_envio', 'horario', 'motivo', 'dev_motivo', 'dev_checklist',
   'origen_direccion', 'origen_contacto', 'origen_telefono', 'origen_link', 'destino_direccion', 'destino_contacto', 'destino_telefono', 'destino_link',
-  'producto_tipo', 'producto_otro', 'tipo_otro', 'articulos', 'observaciones', 'costo_absorbe', 'costo_detalle', 'fecha_requerida', 'fecha_entrega',
+  'origen_ciudad', 'origen_estado', 'destino_ciudad', 'destino_estado', 'producto_tipo', 'producto_otro', 'tipo_otro', 'articulos', 'observaciones', 'costo_absorbe', 'costo_detalle', 'fecha_requerida', 'fecha_entrega',
   'fecha_abierta', 'recoleccion', 'fecha_recoleccion', 'recoleccion_abierta', 'fuera_tiempo', 'aut_estado', 'aut_correo', 'aut_motivo', 'dev_cumple',
   'paquetes', 'paq_total', 'paq_peso_kg', 'paq_vol_kg', 'acepta_condiciones'];
 const motivoBloqueo = (s) => (s.estado !== 'recibida' ? 'Estado: ' + (C.ESTADOS[s.estado] || s.estado) : s.aut_enviada ? 'La autorización de costo ya se envió.' : '');
@@ -635,7 +638,9 @@ export async function adminDatos() {
     folio_cstext: s.folio_cstext || '', categorizacion: s.categorizacion || '', responsable: s.responsable || '', transportista: s.transportista || '',
     unidad_asignada: s.unidad_asignada || '', guia: s.guia || '', fecha_programada: s.fecha_programada || '', cerrada: s.cerrada || '',
     monto: s.monto || '', concepto: s.concepto || '', maniobra: s.maniobra || 'No', cst: s.cst || C.CST, facturada: s.facturada || '',
-    origen_fact: s.origen_fact || s.origen_direccion || lugarTexto(s, 'origen'), destino_fact: s.destino_fact || s.destino_direccion || lugarTexto(s, 'destino'),
+    origen_fact: s.origen_fact || ciudadEstado(s, 'origen') || s.origen_direccion || lugarTexto(s, 'origen'),
+    destino_fact: s.destino_fact || ciudadEstado(s, 'destino') || s.destino_direccion || lugarTexto(s, 'destino'),
+    origen_ciudad: s.origen_ciudad || '', origen_estado: s.origen_estado || '', destino_ciudad: s.destino_ciudad || '', destino_estado: s.destino_estado || '',
     cliente_fact: s.cliente_fact || clienteFactura(s) }))
     .sort((x, y) => String(y.creada).localeCompare(String(x.creada)));
   return { yo: publico(a), solicitudes: lista, usuarios: await equipo(), categorias: C.CATEGORIAS, transportistas: C.TRANSPORTISTAS, tipos_unidad: C.TIPOS_UNIDAD,
@@ -765,7 +770,7 @@ export async function adminActualizar(_t, folio, cambios) {
       parrafos: ['La solicitud ' + folio + ' quedó como Completada. Ya aparece en «Facturación» para descargar la plantilla del proveedor.'],
       datos: [['Proveedor', n.transportista || '—'], ['Consecutivo', n.folio_cstext || '—'], ['Fecha de carga', diaTexto(n.fecha_programada) || '—'],
         ['Monto', n.monto ? '$' + Number(n.monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'],
-        ['Origen', n.origen_fact || n.origen_direccion || lugarTexto(n, 'origen')], ['Destino', n.destino_fact || n.destino_direccion || lugarTexto(n, 'destino')]],
+        ['Origen', n.origen_fact || lugarTexto(n, 'origen')], ['Destino', n.destino_fact || lugarTexto(n, 'destino')]],
       boton: { texto: 'Abrir Facturación', url: urlPanel() } });
   }
   return adminDetalle(null, folio);
@@ -901,7 +906,8 @@ export async function adminGuardarUsuario(_t, datos) {
 const urlAutorizar = (t, d) => new URL('autorizar.html?t=' + encodeURIComponent(t) + (d ? '&d=' + d : ''), base()).href;
 function resumenAutorizacion(s, costo) {
   return [['Folio', s.folio], ['Solicitante', s.solicitante], ['Departamento', s.area], ['Qué se envía', productoNombre(s)],
-    ['Movimiento', movimientoNombre(s)], ['Origen', s.origen_direccion || lugarTexto(s, 'origen')], ['Destino', s.destino_direccion || lugarTexto(s, 'destino')],
+    ['Movimiento', movimientoNombre(s)], ['Origen', [lugarTexto(s, 'origen'), ciudadEstado(s, 'origen') ? s.origen_direccion : ''].filter(Boolean).join(' · ')],
+    ['Destino', [lugarTexto(s, 'destino'), ciudadEstado(s, 'destino') ? s.destino_direccion : ''].filter(Boolean).join(' · ')],
     ['Tipo de servicio', servicioNombre(s.forma_envio)], ['Cantidad, dimensiones y peso', articulosTexto(s) || s.paquetes],
     ['Peso total', s.paq_peso_kg ? s.paq_peso_kg + ' kg' : '']].concat(fechasTexto(s),
     [['Quién absorbe el costo', costoTexto(s)], ['Costo / cotización', costo || 'Ver cotización adjunta'], ['Motivo de la autorización', s.aut_motivo]])
