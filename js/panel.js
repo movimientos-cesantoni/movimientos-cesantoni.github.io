@@ -1,6 +1,7 @@
 /* Panel de Logística (Liga 2): base de solicitudes. Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=15';
-import { libroXlsx, libroBytes, zipArchivos } from './xlsx.js?v=15';
+import * as API from './servidor.js?v=16';
+import { libroXlsx, libroBytes, zipArchivos } from './xlsx.js?v=16';
+import { analizarPlantilla, crearGenerador, fechaLarga, aBase64, deBase64 } from './plantilla.js?v=16';
 window.API = API;
 (function () {
     'use strict';
@@ -324,7 +325,8 @@ window.API = API;
       /* Transportista y unidad sugieren el catálogo pero aceptan escribir otro. */
       var transp = h('input', { class: 'entrada', value: s.transportista || '', maxlength: 160, list: 'cat-transportistas', placeholder: 'Escribe o elige' });
       var unidad = h('input', { class: 'entrada', value: s.unidad_asignada || '', maxlength: 160, list: 'cat-unidades', placeholder: 'Tipo y placas' });
-      var catalogos = [h('datalist', { id: 'cat-transportistas' }, datos.transportistas.map(function (t) { return h('option', { value: t }); })),
+      var listaTransp = (datos.plantilla ? datos.plantilla.transportistas : []).concat(datos.transportistas.filter(function (t) { return !datos.plantilla || datos.plantilla.transportistas.indexOf(t) < 0; }));
+      var catalogos = [h('datalist', { id: 'cat-transportistas' }, listaTransp.map(function (t) { return h('option', { value: t }); })),
         h('datalist', { id: 'cat-unidades' }, datos.tipos_unidad.map(function (t) { return h('option', { value: t }); }))];
       var guia = h('input', { class: 'entrada', value: s.guia || '', maxlength: 160 });
       var fprog = h('input', { class: 'entrada', type: 'date', value: s.fecha_programada || '' });
@@ -461,6 +463,23 @@ window.API = API;
       var a = h('a', { href: URL.createObjectURL(blob), download: nombre });
       document.body.appendChild(a); a.click(); setTimeout(function () { a.remove(); }, 1000);
     }
+    /* Plantilla de movimientos: se descarga una vez y se reutiliza mientras no cambie. */
+    var cacheGenerador = null;
+    function obtenerGenerador() {
+      if (!datos.plantilla) return Promise.resolve(null);
+      if (!cacheGenerador || cacheGenerador.subida !== datos.plantilla.subida) {
+        cacheGenerador = { subida: datos.plantilla.subida, promesa: run('adminPlantilla').then(function (p) { return p ? crearGenerador(deBase64(p.base64)) : null; }) };
+        cacheGenerador.promesa.catch(function () { cacheGenerador = null; });
+      }
+      return cacheGenerador.promesa;
+    }
+    var LUGAR = 'CALERA DE VICTOR ROSALES, ZACATECAS., A ';
+    function valoresFormato(s) {
+      var M = function (t) { return String(t || '').toUpperCase(); };
+      return { fecha: LUGAR + fechaLarga(String(s.creada || '').slice(0, 10)), origen: 'ORIGEN: ' + M(s.origen_fact), destino: 'DESTINO: ' + M(s.destino_fact),
+        folio: s.folio_cstext || s.folio, subtotal: Number(s.monto) || 0, transportista: s.transportista || '', tipo: M(s.concepto),
+        observaciones: 'MOVIMIENTO A ' + M(s.destino_fact) + (s.producto ? ' · ' + M(s.producto) : '') + (s.area ? ' · ' + M(s.area) : '') };
+    }
     var limpioArchivo = function (t) { return String(t).replace(/[^\wÁÉÍÓÚÑáéíóúñ-]+/g, '_'); };
     function facturacion() {
       nav('facturacion');
@@ -491,27 +510,45 @@ window.API = API;
       var CARPETA = { Flete: 'Fletes', Maniobras: 'Maniobras' };
       var carpeta = function (s) { return CARPETA[s.concepto] || 'Sin definir'; };
       var sufijo = function () { return (filtrosFact.mes || cfg.hoy); };
-      function plantillas(lista) {
+      /* Con la plantilla de movimientos: un formato por movimiento, en «Fletes/PROVEEDOR/CSTEXT….xlsx» o «Maniobras/…».
+         Sin plantilla (aún no la sube el administrador): la tabla simple por proveedor y concepto. */
+      function archivosDe(lista, gen) {
         var archivos = [];
         lista.forEach(function (g) {
+          if (gen) {
+            g.items.forEach(function (s) {
+              var folio = s.folio_cstext || s.folio;
+              archivos.push({ ruta: carpeta(s) + '/' + limpioArchivo(g.proveedor) + '/' + folio + '.xlsx', solo: folio + '_' + limpioArchivo(g.proveedor) + '.xlsx',
+                bytes: gen(valoresFormato(s)) });
+            });
+            return;
+          }
           var porCarpeta = {};
           g.items.forEach(function (s) { (porCarpeta[carpeta(s)] = porCarpeta[carpeta(s)] || []).push(s); });
           Object.keys(porCarpeta).sort().forEach(function (c) {
-            archivos.push({ carpeta: c, nombre: 'Plantilla_' + limpioArchivo(g.proveedor) + '_' + (c === 'Sin definir' ? 'Sin_definir' : c) + '_' + sufijo() + '.xlsx',
-              hoja: hoja(g.proveedor, porCarpeta[c], false) });
+            var nombre = 'Plantilla_' + limpioArchivo(g.proveedor) + '_' + (c === 'Sin definir' ? 'Sin_definir' : c) + '_' + sufijo() + '.xlsx';
+            archivos.push({ ruta: c + '/' + nombre, solo: nombre, bytes: libroBytes([hoja(g.proveedor, porCarpeta[c], false)]) });
           });
         });
         return archivos;
       }
-      function descargarArchivos(archivos, nombreZip) {
-        if (archivos.length === 1) { bajarArchivo(libroXlsx([archivos[0].hoja]), archivos[0].nombre); return; }
-        bajarArchivo(zipArchivos(archivos.map(function (a) { return { nombre: a.carpeta + '/' + a.nombre, bytes: libroBytes([a.hoja]) }; })), nombreZip);
+      function cuantosArchivos(g) {
+        if (datos.plantilla) return g.items.length;
+        return Object.keys(g.items.reduce(function (m, s) { m[carpeta(s)] = 1; return m; }, {})).length;
       }
-      function descargar(g) { descargarArchivos(plantillas([g]), 'Plantillas_' + limpioArchivo(g.proveedor) + '_' + sufijo() + '.zip'); }
-      function descargarTodas() {
+      function descargarFormatos(lista, nombreZip, boton) {
+        if (boton) U.ocupado(boton, true, 'Preparando…');
+        return obtenerGenerador().then(function (gen) {
+          var archivos = archivosDe(lista, gen);
+          if (archivos.length === 1) bajarArchivo(new Blob([archivos[0].bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), archivos[0].solo);
+          else bajarArchivo(zipArchivos(archivos.map(function (a) { return { nombre: a.ruta, bytes: a.bytes }; })), nombreZip);
+        }).catch(fallo).then(function () { if (boton) U.ocupado(boton, false); });
+      }
+      function descargar(g, boton) { return descargarFormatos([g], 'Formatos_' + limpioArchivo(g.proveedor) + '_' + sufijo() + '.zip', boton); }
+      function descargarTodas(ev) {
         var lista = grupos();
         if (!lista.length) { U.toast('No hay entregas con estos filtros.', true); return; }
-        descargarArchivos(plantillas(lista), 'Plantillas_' + sufijo() + '.zip');
+        descargarFormatos(lista, 'Formatos_' + sufijo() + '.zip', ev && ev.currentTarget);
       }
       /* Administrador: un solo Excel del mes, con una hoja por proveedor y un resumen al inicio. */
       function descargarMes() {
@@ -537,8 +574,11 @@ window.API = API;
           var faltan = g.items.filter(function (s) { return s.monto === '' || !s.folio_cstext; }).length;
           var sinConcepto = g.items.filter(function (s) { return !s.concepto; }).length;
           var pendientes = g.items.filter(function (s) { return !s.facturada; });
-          var varias = plantillas([g]).length > 1;
-          var bajar = h('button', { class: 'btn btn-pri btn-chico', type: 'button', onclick: function () { descargar(g); } }, varias ? '⬇ Descargar plantillas (ZIP)' : '⬇ Descargar plantilla (Excel)');
+          var varias = cuantosArchivos(g) > 1, nombreBoton = datos.plantilla ? (varias ? '⬇ Descargar formatos (ZIP)' : '⬇ Descargar formato (Excel)')
+            : (varias ? '⬇ Descargar plantillas (ZIP)' : '⬇ Descargar plantilla (Excel)');
+          var bajar = h('button', { class: 'btn btn-pri btn-chico', type: 'button' }, nombreBoton);
+          bajar.addEventListener('click', function () { descargar(g, bajar); });
+          var fueraDeTabla = datos.plantilla ? g.items.filter(function (s) { return datos.plantilla.transportistas.indexOf(s.transportista) < 0; }).length : 0;
           /* Solo las entregas concluidas se marcan como facturadas. */
           var marcar = filtrosFact.estatus !== 'completada' ? null : h('button', { class: 'btn btn-chico', type: 'button' }, pendientes.length ? 'Marcar como facturadas' : 'Quitar marca de facturadas');
           if (marcar) marcar.addEventListener('click', function () {
@@ -553,8 +593,9 @@ window.API = API;
               h('div', { class: 'acciones' }, bajar, marcar)),
             faltan ? h('div', { class: 'aviso aviso-alerta', style: 'margin:12px 0 0' }, h('p', null, faltan + (faltan === 1 ? ' entrega no tiene' : ' entregas no tienen') + ' monto o consecutivo. Pide al planeador que los capture antes de facturar.')) : null,
             sinConcepto ? h('div', { class: 'aviso aviso-alerta', style: 'margin:12px 0 0' }, h('p', null, sinConcepto + (sinConcepto === 1 ? ' entrega no dice' : ' entregas no dicen') + ' si es flete o maniobras; se descarga en la carpeta «Sin definir».')) : null,
+            fueraDeTabla ? h('div', { class: 'aviso aviso-alerta', style: 'margin:12px 0 0' }, h('p', null, 'Este proveedor no está escrito igual que en la tabla de transportistas de la plantilla: en el formato, el IVA y las retenciones saldrán en $0. Corrígelo en la solicitud eligiéndolo de la lista.')) : null,
             h('div', { class: 'tabla-caja', style: 'margin-top:12px' }, h('table', { class: 'tabla-fact' },
-              h('thead', null, h('tr', null, COLS_FACT.map(function (c) { return h('th', null, c[0]); }).concat([h('th', null, 'CONCEPTO'), h('th', null, 'ESTATUS'), h('th', null, 'FACTURADA')]))),
+              h('thead', null, h('tr', null, COLS_FACT.map(function (c) { return h('th', null, c[0]); }).concat([h('th', null, 'CONCEPTO'), h('th', null, 'ESTATUS'), h('th', null, 'FACTURADA'), h('th', null, 'FORMATO')]))),
               h('tbody', null, g.items.map(function (s) {
                 var tr = h('tr', { tabindex: '0' }, COLS_FACT.map(function (c) {
                   var v = c[3](s);
@@ -562,7 +603,12 @@ window.API = API;
                 }).concat([h('td', { class: 'centro' }, s.concepto ? h('span', { class: 'pill ' + (s.concepto === 'Flete' ? 'e-recibida' : 'e-en_revision') }, s.concepto) : h('span', { class: 'gris' }, 'Sin definir')),
                   h('td', { class: 'centro' }, U.estado(cfg, s.estado)),
                   h('td', { class: 'centro', style: 'white-space:nowrap' }, s.facturada ? U.dia(s.facturada) : h('span', { class: 'gris' }, 'Pendiente'),
-                  s.folio !== s.folio_cstext ? h('div', { class: 'sub' }, s.folio) : null)]));
+                  s.folio !== s.folio_cstext ? h('div', { class: 'sub' }, s.folio) : null),
+                  h('td', { class: 'centro' }, (function () {
+                    var b = h('button', { class: 'btn btn-chico', type: 'button', 'aria-label': 'Descargar formato ' + (s.folio_cstext || s.folio) }, '⬇');
+                    b.addEventListener('click', function (ev) { ev.stopPropagation(); descargarFormatos([{ proveedor: g.proveedor, items: [s] }], 'Formato.zip', b); });
+                    return b;
+                  })())]));
                 tr.addEventListener('click', function () { detalle(s.folio); });
                 return tr;
               })))));
@@ -573,13 +619,15 @@ window.API = API;
       var ver = lista([['pendientes', 'Pendientes de facturar'], ['facturadas', 'Ya facturadas'], ['todas', 'Todas']], filtrosFact.ver);
       [[estatus, 'estatus'], [mes, 'mes'], [ver, 'ver']].forEach(function (x) { x[0].addEventListener('change', function () { filtrosFact[x[1]] = x[0].value; pintar(); }); });
       var cabeceraMes = h('div', { style: 'margin:-4px 0 14px' });
+      var sinPlantilla = datos.plantilla ? null : h('div', { class: 'aviso aviso-info' }, h('p', null, 'Aún no se ha subido la plantilla de movimientos: se descarga la tabla simple por proveedor. ' +
+        (esAdmin ? 'Súbela en Configuración › Plantilla de movimientos.' : 'Pide al administrador que la suba en Configuración.')));
       mount(main,
         encabezado('Facturación', 'Elige el estatus y el mes. Cada proveedor tiene su plantilla, separada en fletes y maniobras. «Descargar todas» baja un ZIP con una carpeta para fletes y otra para maniobras.', [
           h('button', { class: 'btn btn-pri btn-chico', type: 'button', onclick: descargarTodas }, '⬇ Descargar todas (ZIP)'),
           esAdmin ? h('button', { class: 'btn btn-osc btn-chico', type: 'button', onclick: descargarMes }, '⬇ Excel del mes (una hoja por proveedor)') : null,
           h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { cargar().then(facturacion); } }, 'Actualizar')]),
         h('div', { class: 'filtros filtros-fact' }, campo('Estatus', estatus), campo('Mes de carga', mes), campo('Ver', ver)),
-        cabeceraMes,
+        cabeceraMes, sinPlantilla,
         cont);
       pintar();
     }
@@ -671,9 +719,33 @@ window.API = API;
           h('section', { class: 'tarjeta' }, h('h2', null, 'Enlaces'),
             h('p', null, 'Portal para solicitar (compártelo con las áreas): ', h('br'), h('a', { href: c.url, target: '_blank', rel: 'noopener' }, c.url)),
             h('p', null, 'Este panel (base de Logística): ', h('br'), h('a', { href: c.panel, target: '_blank', rel: 'noopener' }, c.panel)))];
-        if (esAdmin) partes.push(alertas(c), consecutivo(c), catalogos(c), usuarios(c.usuarios, c.roles));
+        if (esAdmin) partes.push(plantillaMovimientos(c), alertas(c), consecutivo(c), catalogos(c), usuarios(c.usuarios, c.roles));
         mount(main, partes);
       }).catch(fallo);
+    }
+
+    /* Plantilla de movimientos: el administrador sube el Excel una vez; Facturación genera con él un formato por movimiento. */
+    function plantillaMovimientos(c) {
+      var estado = h('div', { class: 'aviso ' + (c.plantilla ? 'aviso-ok' : 'aviso-alerta') }, h('p', null, c.plantilla
+        ? ['✓ Plantilla cargada: ', h('b', null, c.plantilla.nombre), ' · ' + c.plantilla.n + ' transportistas en su tabla · subida el ' + U.dia(c.plantilla.subida) + ' por ' + c.plantilla.por + '.']
+        : 'Aún no hay plantilla. Sube el archivo PLANTILLA_MOVIMIENTOS_EXT.xlsx para que Facturación descargue un formato por movimiento.'));
+      var input = h('input', { type: 'file', accept: '.xlsx', class: 'archivo-oculto' });
+      var boton = h('label', { class: 'btn btn-pri btn-chico btn-adjuntar' }, c.plantilla ? '📎 Cambiar plantilla' : '📎 Subir plantilla', input);
+      input.addEventListener('change', function () {
+        var f = input.files && input.files[0];
+        if (!f) return;
+        input.disabled = true;
+        f.arrayBuffer().then(function (buf) {
+          var bytes = new Uint8Array(buf);
+          return analizarPlantilla(bytes).then(function (info) {
+            return run('adminSubirPlantilla', { nombre: f.name, base64: aBase64(bytes), hoja: info.hoja, transportistas: info.transportistas });
+          });
+        }).then(function (r) { U.toast('Plantilla cargada con ' + r.transportistas.length + ' transportistas.'); cacheGenerador = null; return cargar(); })
+          .then(configuracion).catch(function (e) { input.disabled = false; input.value = ''; fallo(e); });
+      });
+      return h('section', { class: 'tarjeta' }, h('h2', null, 'Plantilla de movimientos (Excel)'),
+        h('p', { class: 'gris chico' }, 'Con ella, cada entrega se descarga en su propio formato (folio, origen, destino, transportista, flete o maniobras y subtotal); el IVA, las retenciones y el total los calcula el mismo Excel con la tabla de transportistas. La lista de transportistas del planeador se toma de esa tabla.'),
+        estado, boton);
     }
 
     /* Alertas por correo: cada persona elige qué avisos recibe. */

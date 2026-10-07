@@ -602,8 +602,28 @@ export async function adminCambiarPassword(_t, actual, nueva) {
   return publico(await yo());
 }
 
+/* Plantilla de movimientos (Excel) que sube el administrador: se guarda en la base, no en el sitio público. */
+export async function adminSubirPlantilla(_t, p) {
+  const a = await sesionPanel(true);
+  soloAdmin(a);
+  p = p || {};
+  const b64 = String(p.base64 || '');
+  if (!b64 || b64.length > 900000) throw fallo('La plantilla debe ser un Excel de menos de 600 KB.');
+  const transportistas = [].concat(p.transportistas || []).map((x) => String(x).trim().slice(0, 120)).filter(Boolean).slice(0, 400);
+  const t = ahora(), nombre = String(p.nombre || 'plantilla.xlsx').slice(0, 140);
+  await fb.setDoc(ref(COL.config, 'plantilla_archivo'), { nombre, base64: b64, subida: t });
+  await fb.setDoc(ref(COL.config, 'plantilla'), { nombre, subida: t, por: a.nombre, hoja: String(p.hoja || '').slice(0, 60), transportistas });
+  return { nombre, subida: t, por: a.nombre, transportistas };
+}
+export async function adminPlantilla() {
+  await sesionPanel(true);
+  const d = await getOne(ref(COL.config, 'plantilla_archivo')).catch(() => null);
+  return d ? { nombre: d.nombre, base64: d.base64, subida: d.subida } : null;
+}
+
 export async function adminDatos() {
   const a = await sesionPanel(true);
+  const plantilla = (await getOne(ref(COL.config, 'plantilla')).catch(() => null)) || null;
   const lista = (await getAll(col(COL.sol))).map((s) => ({ folio: s.folio, creada: s.creada, actualizada: s.actualizada, estado: s.estado,
     prioridad: prioridad(s.prioridad), tipo: s.tipo, tipo_nombre: movimientoNombre(s), producto: productoNombre(s), articulos: articulosTexto(s),
     costo: costoTexto(s), fecha_requerida: s.fecha_requerida || '', fecha_abierta: s.fecha_abierta || '', recoleccion: s.recoleccion || '',
@@ -619,7 +639,8 @@ export async function adminDatos() {
     cliente_fact: s.cliente_fact || clienteFactura(s) }))
     .sort((x, y) => String(y.creada).localeCompare(String(x.creada)));
   return { yo: publico(a), solicitudes: lista, usuarios: await equipo(), categorias: C.CATEGORIAS, transportistas: C.TRANSPORTISTAS, tipos_unidad: C.TIPOS_UNIDAD,
-    aut_estados: C.AUT_ESTADOS, roles: C.ROLES, alertas: C.ALERTAS, tipos: CAT.tipos, conceptos: C.CONCEPTOS, areas: CAT.areas };
+    aut_estados: C.AUT_ESTADOS, roles: C.ROLES, alertas: C.ALERTAS, tipos: CAT.tipos, conceptos: C.CONCEPTOS, areas: CAT.areas,
+    plantilla: plantilla ? { nombre: plantilla.nombre, subida: plantilla.subida, por: plantilla.por, transportistas: plantilla.transportistas || [] } : null };
 }
 
 export async function adminDetalle(_t, folio) {
@@ -774,17 +795,19 @@ export async function adminConfig() {
   const a = await sesionPanel(true);
   const av = (await getOne(ref(COL.config, 'avisos')).catch(() => null)) || {};
   const esAdmin = a.rol === 'admin';
-  let usuarios = [], cstext = null;
+  let usuarios = [], cstext = null, plantilla = null;
   if (esAdmin) {
     usuarios = (await getAll(col(COL.admins))).map(publico)
       .concat((await getAll(col(COL.inv))).map((i) => ({ usuario: '', nombre: i.nombre, correo: i.id, rol: rolValido(i.rol), activo: true, pendiente: true, ultimo_acceso: '' })));
     cstext = (await getOne(ref(COL.config, 'folio')).catch(() => null)) || {};
+    plantilla = (await getOne(ref(COL.config, 'plantilla')).catch(() => null)) || null;
   }
   /* Personas que reciben alertas: las guardadas o, la primera vez, la lista general con todas las alertas. */
   const personas = (av.personas || []).length ? av.personas
     : (av.correos || []).map((c) => ({ nombre: '', correo: c, alertas: C.ALERTAS.map((x) => x[0]) }));
   return { avisos: (av.correos || []).join(', '), personas, alertas: C.ALERTAS, roles: C.ROLES, usuarios, version: VERSION, url: urlPortal(), panel: urlPanel(),
     catalogos: { areas: CAT.areas, productos: CAT.productos.map((x) => x[0]).filter((x) => x !== 'Otro'), tipos: CAT.tipos.map((t) => ({ clave: t[0], nombre: t[1], descripcion: t[2] || '' })) },
+    plantilla: plantilla ? { nombre: plantilla.nombre, subida: plantilla.subida, por: plantilla.por, n: (plantilla.transportistas || []).length } : null,
     tipos_fijos: C.TIPOS_FIJOS, cstext_siguiente: cstext ? (Number(cstext.n) || 0) + 1 : null, cstext_ultimo: cstext ? cstext.ultimo || '' : '' };
 }
 export async function adminGuardarAvisos(_t, texto) {
