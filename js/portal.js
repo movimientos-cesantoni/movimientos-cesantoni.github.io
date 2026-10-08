@@ -1,5 +1,5 @@
 /* Formulario y seguimiento de solicitudes (Liga 1). Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=19';
+import * as API from './servidor.js?v=20';
 window.API = API;
 (function () {
     'use strict';
@@ -15,7 +15,7 @@ window.API = API;
       API.iniciar('portal').then(function () { return run('configPortal'); }).then(function (c) {
         cfg = c;
         if (cfg.sesion) { if (PARAMS.folio) abrir(PARAMS.folio); else misSolicitudes(); return; }
-        inicio();
+        if (PARAMS.folio) pantallaEntrar(); else inicio();
       }).catch(function (e) { mount(main, h('div', { class: 'aviso aviso-mal' }, h('p', null, e.message))); });
     }
 
@@ -24,7 +24,7 @@ window.API = API;
     function menuPortal(activa) {
       U.menu(document.getElementById('menu'), [
         { clave: 'nueva', icono: '➕', titulo: 'Nueva solicitud', ayuda: 'Pide un envío o una recolección', accion: function () { formulario(); } },
-        { clave: 'mis', icono: '📋', titulo: 'Mis solicitudes', ayuda: 'Revisa el avance de tus folios', accion: function () { if (cfg.sesion) misSolicitudes(); else inicio(true); } },
+        { clave: 'mis', icono: '📋', titulo: 'Mis solicitudes', ayuda: 'Revisa el avance de tus folios', accion: function () { if (cfg.sesion) misSolicitudes(); else pantallaEntrar(); } },
         { clave: 'modificar', icono: '✎', titulo: 'Modificar una solicitud', ayuda: 'Cambia un folio que aún no se revisa', accion: pantallaModificar },
         { clave: 'ayuda', icono: '❔', titulo: '¿Cómo funciona?', ayuda: 'Los pasos, explicados', accion: ayuda }
       ], activa, cfg.sesion ? [h('div', { class: 'lateral-usuario' }, h('span', null, 'Entraste como'), h('b', null, cfg.sesion.correo)),
@@ -52,10 +52,27 @@ window.API = API;
     }
 
     /* ---------------------------------------------------------------- portada */
-    function inicio(enfocarEntrada) {
+    function inicio() {
       acceso = null;
       arriba(null);
-      menuPortal(enfocarEntrada === true ? 'mis' : '');
+      menuPortal('');
+      mount(main, h('div', { class: 'portada portada-sola' },
+        h('section', { class: 'tarjeta' },
+          h('h1', null, '¿Necesitas mover algo?'),
+          h('p', { class: 'gris' }, 'Pide aquí envíos, recolecciones, devoluciones y traslados a Logística: qué envías, de dónde sale, a dónde va, cómo se envía, quién paga y cuándo. Cada solicitud recibe un folio con su expediente y te avisamos por correo cada avance.'),
+          h('ul', { class: 'lista-tipos' }, [['¿Qué envías?', 'Producto, mobiliario, sillas, stands, regalos, vinos…'], ['¿De dónde y a dónde?', 'Ciudad, Estado, ubicación, link y contacto'],
+            ['¿Cómo y cuánto?', 'Unidad dedicada o paquetería, con medidas y peso'], ['¿Quién paga y cuándo?', 'Costo, documentos y fechas tentativas']].map(function (t) {
+            return h('li', null, h('b', null, t[0]), h('span', { class: 'gris' }, t[1]));
+          })),
+          h('p', null, h('button', { class: 'btn btn-pri', type: 'button', onclick: formulario }, 'Nueva solicitud')),
+          h('p', { class: 'gris chico', style: 'margin:0' }, '¿Ya tienes solicitudes? Abre el menú ☰ y elige «Mis solicitudes» o «Modificar una solicitud».'))));
+    }
+
+    /* «Mis solicitudes» sin sesión: correo y la clave que llegó con la primera solicitud. */
+    function pantallaEntrar() {
+      acceso = null;
+      arriba(null);
+      menuPortal('mis');
       var correo = h('input', { class: 'entrada', id: 'c-correo', type: 'email', placeholder: 'tu.correo@cesantoni.com.mx', autocomplete: 'email', value: recordado().correo || '' });
       var clave = h('input', { class: 'entrada', id: 'c-clave', type: 'password', autocomplete: 'current-password', placeholder: 'XXXX-XXXX' });
       var err = h('p', { class: 'chico', style: 'color:var(--mal)', role: 'alert', hidden: true });
@@ -79,22 +96,10 @@ window.API = API;
           if (PARAMS.folio) abrir(PARAMS.folio); else misSolicitudes();
         }).catch(function (e) { U.ocupado(btn, false); err.textContent = e.message; err.hidden = false; });
       });
-      mount(main, h('div', { class: 'portada' },
-        h('section', { class: 'tarjeta' },
-          h('h1', null, '¿Necesitas mover algo?'),
-          h('p', { class: 'gris' }, 'Pide aquí envíos, recolecciones, devoluciones y traslados a Logística: qué envías, de dónde sale, a dónde va, cómo se envía, quién paga y cuándo. Cada solicitud recibe un folio con su expediente y te avisamos por correo cada avance.'),
-          h('ul', { class: 'lista-tipos' }, [['¿Qué envías?', 'Producto, mobiliario, sillas, stands, regalos, vinos…'], ['¿De dónde y a dónde?', 'Ciudad, Estado, ubicación, link y contacto'],
-            ['¿Cómo y cuánto?', 'Unidad dedicada o paquetería, con medidas y peso'], ['¿Quién paga y cuándo?', 'Costo, documentos y fechas tentativas']].map(function (t) {
-            return h('li', null, h('b', null, t[0]), h('span', { class: 'gris' }, t[1]));
-          })),
-          h('p', null, h('button', { class: 'btn btn-pri', type: 'button', onclick: formulario }, 'Nueva solicitud'))),
-        h('div', null,
-          h('section', { class: 'tarjeta' },
-            h('h2', null, 'Mis solicitudes'),
-            h('p', { class: 'gris chico' }, 'Entra con tu correo y la clave que te enviamos con tu primera solicitud para ver el estado, responder a Logística o agregar archivos.'),
-            form),
-          buscadorModificar())));
-      if (enfocarEntrada === true) correo.focus();
+      mount(main, h('h1', null, 'Mis solicitudes'),
+        h('p', { class: 'ayuda-pantalla', style: 'margin-bottom:16px' }, 'Entra con tu correo y la clave que te enviamos con tu primera solicitud para ver el estado, responder a Logística o agregar archivos.'),
+        h('section', { class: 'tarjeta', style: 'max-width:520px' }, form));
+      correo.focus();
     }
 
     /* «Modificar una solicitud»: con el folio (y correo + clave si no hay sesión) abre el formulario con sus datos. */
