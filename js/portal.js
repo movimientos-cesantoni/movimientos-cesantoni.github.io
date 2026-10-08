@@ -1,5 +1,5 @@
 /* Formulario y seguimiento de solicitudes (Liga 1). Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=26';
+import * as API from './servidor.js?v=27';
 window.API = API;
 (function () {
     'use strict';
@@ -395,11 +395,10 @@ window.API = API;
       function ubicacion(pre, titulo, intro) {
         return h('div', { class: 'paso' }, seccion(titulo, intro,
           lugaresFrecuentes(pre),
-          texto(pre + '_ciudad', 'Ciudad o municipio', { req: true, max: 80, ejemplo: pre === 'origen' ? 'Ej. Calera' : 'Ej. Gómez Palacio' }),
+          texto(pre + '_ciudad', 'Ciudad o municipio', { req: true, max: 80 }),
           lista(pre + '_estado', 'Estado', cfg.estados_mx, { req: true }),
-          texto(pre + '_direccion', 'Ubicación / dirección', { req: true, max: 300, todo: true, ejemplo: 'Calle, número, colonia y CP (o nombre del lugar)' }),
-          texto(pre + '_link', 'Link de ubicación', { tipo: 'url', max: 500, todo: true, ejemplo: 'https://maps.app.goo.gl/…',
-            ayuda: 'Opcional. Pega el link de Google Maps o similar.', modo: 'url' }),
+          texto(pre + '_direccion', 'Ubicación / dirección', { req: true, max: 300, todo: true }),
+          texto(pre + '_link', 'Link de ubicación (opcional)', { tipo: 'url', max: 500, todo: true, modo: 'url' }),
           texto(pre + '_contacto', 'Nombre del contacto', { max: 160 }),
           texto(pre + '_telefono', 'Teléfono del contacto', { tipo: 'tel', max: 40 })));
       }
