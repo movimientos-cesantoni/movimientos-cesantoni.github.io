@@ -1,7 +1,7 @@
 /* Panel de Logística (Liga 2): base de solicitudes. Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=29';
-import { libroXlsx, zipArchivos } from './xlsx.js?v=29';
-import { analizarPlantilla, crearGenerador, fechaLarga, aBase64, deBase64 } from './plantilla.js?v=29';
+import * as API from './servidor.js?v=30';
+import { libroXlsx, zipArchivos } from './xlsx.js?v=30';
+import { analizarPlantilla, crearGenerador, fechaLarga, aBase64, deBase64 } from './plantilla.js?v=30';
 window.API = API;
 (function () {
     'use strict';
@@ -54,7 +54,8 @@ window.API = API;
     /* Menú lateral según el perfil. Cada opción explica en una línea para qué sirve. */
     function nav(activa) {
       var destino = document.getElementById('nav');
-      if (!yo || yo.debe_cambiar) { U.menu(destino, []); return; }
+      if (!yo || yo.debe_cambiar) { U.menu(destino, []); U.cuenta(); return; }
+      U.cuenta(yo.nombre, rolNombre(yo.rol), salir);
       var items = [];
       if (yo.rol !== 'facturacion') items.push({ clave: 'solicitudes', icono: '📋', titulo: 'Solicitudes', ayuda: 'Ver y atender los pedidos', accion: function () { cargar().then(tablero); } });
       if (yo.rol !== 'planeador') items.push({ clave: 'facturacion', icono: '🧾', titulo: 'Facturación', ayuda: 'Plantillas por proveedor', accion: function () { cargar().then(facturacion); } });

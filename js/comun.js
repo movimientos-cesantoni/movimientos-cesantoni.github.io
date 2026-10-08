@@ -269,6 +269,17 @@ window.U = (function () {
     if (titulo) titulo.textContent = (nombre || 'Solicitudes de movimientos') + (actual ? ' · ' + actual.titulo : '');
   }
 
+  /* Cuenta visible en el encabezado: quién entró y «Cerrar sesión». Sin nombre, se limpia. */
+  function cuenta(nombre, detalle, salir) {
+    var d = document.getElementById('cuenta');
+    if (!d) return;
+    if (!nombre) { mount(d); return; }
+    mount(d, h('span', { class: 'cuenta-info', title: nombre + (detalle ? ' · ' + detalle : '') },
+      h('span', { class: 'cuenta-avatar', 'aria-hidden': 'true' }, String(nombre).trim().charAt(0).toUpperCase()),
+      h('span', { class: 'cuenta-txt' }, h('b', null, nombre), detalle ? h('small', null, detalle) : null)),
+      h('button', { class: 'btn btn-chico', type: 'button', onclick: salir }, 'Cerrar sesión'));
+  }
+
   /* Archivos: los enlaces «#archivo:FOLIO:ID» se abren armando el archivo desde la base. */
   document.addEventListener('click', function (ev) {
     var a = ev.target.closest && ev.target.closest('a[href^="#archivo:"], a[href^="#autorizacion:"]');
@@ -286,6 +297,6 @@ window.U = (function () {
     }).catch(function (e) { if (ventana) ventana.close(); toast(e.message, true); });
   });
 
-  return { h: h, mount: mount, devolucion: devolucion, paquetes: paquetes, fechas: fechas, articulos: articulos, detalle: detalle, autorizacion: autorizacion, expediente: expediente, menu: menu, run: run, leerArchivo: leerArchivo, toast: toast, ocupado: ocupado, dia: dia,
+  return { h: h, mount: mount, devolucion: devolucion, paquetes: paquetes, fechas: fechas, articulos: articulos, detalle: detalle, autorizacion: autorizacion, expediente: expediente, menu: menu, cuenta: cuenta, run: run, leerArchivo: leerArchivo, toast: toast, ocupado: ocupado, dia: dia,
     fechaHora: fechaHora, tamano: tamano, estado: estado, logos: logos, pasos: pasos };
 })();

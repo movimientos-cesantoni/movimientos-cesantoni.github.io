@@ -1,5 +1,5 @@
 /* Formulario y seguimiento de solicitudes (Liga 1). Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=29';
+import * as API from './servidor.js?v=30';
 window.API = API;
 (function () {
     'use strict';
@@ -22,6 +22,7 @@ window.API = API;
     function arriba(contenido) { mount(document.getElementById('arriba'), contenido || null); }
     /* Menú lateral del portal: lo básico, con una línea de ayuda en cada opción. */
     function menuPortal(activa) {
+      if (cfg.sesion) U.cuenta(cfg.sesion.correo, 'Mis solicitudes', salir); else U.cuenta();
       U.menu(document.getElementById('menu'), [
         { clave: 'nueva', icono: '➕', titulo: 'Nueva solicitud', ayuda: 'Pide un envío o una recolección', accion: function () { formulario(); } },
         { clave: 'mis', icono: '📋', titulo: 'Mis solicitudes', ayuda: 'Revisa el avance de tus folios', accion: function () { if (cfg.sesion) misSolicitudes(); else pantallaEntrar(); } },
