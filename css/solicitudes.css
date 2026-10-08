@@ -547,3 +547,69 @@ body.menu-abierto { overflow:hidden; }
 .lugar-btn[aria-pressed="true"] { border-color:var(--naranja); background:var(--naranja-claro); box-shadow:inset 0 0 0 1px var(--naranja); }
 .lugar-btn:focus-visible { outline:2px solid var(--naranja); outline-offset:2px; }
 .lugares-edit .entrada { min-height:38px; padding:6px 9px; font-size:13px; min-width:120px; }
+
+/* ===== Asistente de nueva solicitud: columna centrada, línea de pasos y tarjetas con aire ===== */
+.asistente { max-width:880px; margin:0 auto; }
+.asistente-cabeza { text-align:center; margin:4px 0 22px; }
+.asistente-cabeza h1 { margin-bottom:6px; }
+.asistente-cabeza p { margin:0; }
+.asistente > .aviso { margin-bottom:18px; }
+.asistente .avance { padding:22px 24px 18px; border-radius:16px; margin-bottom:22px; }
+.asistente .avance-txt { text-align:center; font-size:15px; margin-bottom:18px; }
+.stepper { list-style:none; margin:0; padding:0; display:flex; }
+.stepper li { flex:1 1 0; position:relative; text-align:center; min-width:0; }
+.stepper li:not(:first-child)::before { content:""; position:absolute; top:15px; right:50%; width:100%; height:2px; background:var(--linea); }
+.stepper li.hecho::before, .stepper li.actual::before { background:var(--naranja); }
+.stepper button, .stepper .paso-nodo { position:relative; z-index:1; display:flex; flex-direction:column; align-items:center; gap:6px; width:100%;
+  background:none; border:0; padding:0; font:inherit; color:var(--gris); cursor:default; }
+.stepper button { cursor:pointer; }
+.stepper button:hover .etq { color:var(--naranja-osc); text-decoration:underline; }
+.stepper button:focus-visible { outline:2px solid var(--naranja); outline-offset:3px; border-radius:8px; }
+.stepper .punto { width:32px; height:32px; border-radius:50%; display:grid; place-items:center; background:#fff; border:2px solid var(--linea);
+  font-weight:700; font-size:13px; color:var(--gris); transition:box-shadow .2s; }
+.stepper li.hecho .punto { background:var(--naranja); border-color:var(--naranja); color:#fff; }
+.stepper li.actual .punto { border-color:var(--naranja); color:var(--naranja-osc); background:#fff; box-shadow:0 0 0 5px var(--naranja-claro); }
+.stepper .etq { font-size:12px; line-height:1.3; overflow-wrap:anywhere; }
+.stepper li.actual .etq { color:var(--tinta); font-weight:700; }
+.stepper li.hecho .etq { color:var(--tinta); }
+
+.asistente .paso-tarjeta { padding:34px 36px 32px; border-radius:16px; }
+.paso-encabezado { border-bottom:1px solid var(--linea); padding-bottom:18px; margin-bottom:24px; }
+.paso-encabezado h2 { font-size:22px; margin:0 0 6px; }
+.paso-encabezado p { margin:0; font-size:14.5px; }
+.asistente .rejilla { gap:22px 24px; }
+.asistente .paso .tarjeta + .tarjeta { margin-top:0; }
+.asistente .opciones { grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:12px; }
+.asistente .paso .opcion span { padding:18px 18px; border-radius:12px; min-height:64px; transition:border-color .15s, background .15s; }
+.asistente .paso .opcion span:hover { border-color:#929EA8; }
+.asistente .paso .opcion span b { font-size:15.5px; }
+.asistente .paso .opcion span small { font-size:12.5px; line-height:1.5; }
+.asistente .casilla { align-items:center; gap:12px; padding:14px 16px; border-radius:10px; font-weight:600; }
+.asistente .casilla input { margin:0; width:18px; height:18px; }
+.asistente .condiciones { border-radius:10px; padding:14px 18px; background:#F8FAFB; }
+.asistente .grupo-medidas, .asistente .paq-fila { border-radius:12px; }
+.asistente h3 { font-size:16px; margin-top:6px; }
+
+/* Barra de botones al final: ya no flota encima del contenido. */
+.asistente .pasos-acciones { position:static; background:#fff; border:1px solid var(--linea); border-radius:16px; padding:16px 20px; margin-top:6px; }
+.asistente .pasos-acciones .btn { min-width:150px; }
+.asistente #f-feedback, .asistente > .aviso-mal { margin-top:12px; }
+
+@media (max-width:760px) {
+  .asistente .avance { padding:16px 12px 14px; }
+  .stepper .etq { display:none; }
+  .stepper li.actual .etq { display:block; position:absolute; top:40px; left:50%; transform:translateX(-50%); white-space:nowrap; }
+  .stepper .punto { width:26px; height:26px; font-size:12px; }
+  .stepper li:not(:first-child)::before { top:12px; }
+  .asistente .avance { padding-bottom:34px; }
+  .asistente .paso-tarjeta { padding:24px 18px; }
+  .paso-encabezado h2 { font-size:19px; }
+  .asistente .pasos-acciones { position:sticky; bottom:0; z-index:5; border-radius:14px 14px 0 0; padding:12px; gap:8px; }
+  .asistente .pasos-acciones .liga { order:3; width:100%; text-align:center; }
+  .asistente .pasos-acciones .espacio { display:none; }
+  .asistente .pasos-acciones .btn { flex:1 1 0; min-width:0; }
+}
+.asistente .campo label.casilla, .asistente .casilla { display:flex; margin-bottom:0; }
+.asistente .casilla:hover { border-color:#929EA8; }
+.asistente .resumen .cabecera { padding-bottom:10px; border-bottom:1px solid var(--linea); }
+.asistente .paso > .tarjeta + .tarjeta { margin-top:18px; }

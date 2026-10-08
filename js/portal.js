@@ -1,5 +1,5 @@
 /* Formulario y seguimiento de solicitudes (Liga 1). Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=24';
+import * as API from './servidor.js?v=25';
 window.API = API;
 (function () {
     'use strict';
@@ -278,7 +278,8 @@ window.API = API;
       }
       function seccion(titulo, intro) {
         var hijos = Array.prototype.slice.call(arguments, 2);
-        return h('section', { class: 'tarjeta' }, h('h2', null, titulo), intro ? h('p', { class: 'gris chico' }, intro) : null, h('div', { class: 'rejilla' }, hijos));
+        return h('section', { class: 'tarjeta paso-tarjeta' }, h('header', { class: 'paso-encabezado' }, h('h2', null, titulo), intro ? h('p', { class: 'gris' }, intro) : null),
+          h('div', { class: 'rejilla' }, hijos));
       }
       function numero(v) { v = String(v).replace(',', '.').trim(); return v === '' ? NaN : Number(v); }
       var r1 = function (x) { return Math.round(x * 10) / 10; };
@@ -465,8 +466,8 @@ window.API = API;
         return f;
       }
       var botonGrupo = h('button', { type: 'button', class: 'btn btn-chico', onclick: function () { agregarGrupo().cantidad.focus(); } }, '+ Agregar otro tipo de paquete o material');
-      var seccionEsp = h('section', { class: 'tarjeta' }, h('h2', null, 'Especificaciones'),
-        h('p', { class: 'gris chico' }, 'Si todo es igual (mismas medidas, mismo peso y mismo material), captúralo en un solo renglón con la cantidad. Agrega otro grupo solo cuando cambien las medidas, el peso o el material.'),
+      var seccionEsp = h('section', { class: 'tarjeta paso-tarjeta' }, h('header', { class: 'paso-encabezado' }, h('h2', null, 'Especificaciones'),
+        h('p', { class: 'gris' }, 'Si todo es igual (mismas medidas, mismo peso y mismo material), captúralo en un solo renglón con la cantidad. Agrega otro grupo solo cuando cambien las medidas, el peso o el material.')),
         h('div', { class: 'rejilla' },
           campo('especificaciones', 'Cantidad, dimensiones (largo × ancho × alto, en cm) y peso por pieza (kg)',
             h('div', null, cajaEsp, h('div', { style: 'margin-top:10px' }, botonGrupo), resumenEsp), { req: true, todo: true }),
@@ -482,9 +483,9 @@ window.API = API;
 
       /* ---------- Devolución: solo cuando el movimiento es «Devolución de producto». */
       var estadoCheck = h('div', { class: 'aviso aviso-info', style: 'margin:0' });
-      var pasoDevolucion = h('div', { class: 'paso' }, h('section', { class: 'tarjeta' },
-        h('h2', null, h('span', { class: 'num' }, '!'), 'Devolución: pruebas y revisión del material'),
-        h('p', { class: 'gris chico' }, 'Para seguir adelante con la devolución, el material debe cumplir todos los puntos. Si alguno no se cumple, Logística revisará el caso antes de programar la recolección.'),
+      var pasoDevolucion = h('div', { class: 'paso' }, h('section', { class: 'tarjeta paso-tarjeta' },
+        h('header', { class: 'paso-encabezado' }, h('h2', null, 'Devolución: pruebas y revisión del material'),
+          h('p', { class: 'gris' }, 'Para seguir adelante con la devolución, el material debe cumplir todos los puntos. Si alguno no se cumple, Logística revisará el caso antes de programar la recolección.')),
         h('div', { class: 'rejilla' },
           lista('dev_motivo', 'Motivo de la devolución', cfg.motivos_devolucion, { req: true, aplica: esTipo('devolucion') }),
           h('div'),
@@ -512,8 +513,8 @@ window.API = API;
       /* ---------- 7 · Documentación del servicio */
       var infoAutDoc = h('div', { class: 'aviso aviso-info todo' });
       var pasoDocs = h('div', { class: 'paso' },
-        h('section', { class: 'tarjeta' }, h('h2', null, 'Documentación del servicio'),
-          h('p', { class: 'gris chico' }, 'Todo queda en el mismo folio: solicitud → cotización → autorización → salida. Si aún no tienes algún documento, lo agregas después desde «Mis solicitudes».'),
+        h('section', { class: 'tarjeta paso-tarjeta' }, h('header', { class: 'paso-encabezado' }, h('h2', null, 'Documentación del servicio'),
+          h('p', { class: 'gris' }, 'Todo queda en el mismo folio: solicitud → cotización → autorización → salida. Si aún no tienes algún documento, lo agregas después desde «Mis solicitudes».')),
           h('div', { class: 'docs' },
             h('div', { class: 'doc-bloque' }, h('h3', null, 'Cotización'),
               selector('cotizacion', null, cotizaciones, ARCHIVOS, { boton: 'Adjuntar cotización' }),
@@ -529,7 +530,8 @@ window.API = API;
         h('p', null, h('b', null, 'Importante: '), AVISO_48),
         h('p', { class: 'chico' }, 'Tu solicitud se registrará como Urgente y requerirá autorización.'));
       var pasoFechas = h('div', { class: 'paso' },
-        h('section', { class: 'tarjeta' }, h('h2', null, 'Fechas tentativas'),
+        h('section', { class: 'tarjeta paso-tarjeta' }, h('header', { class: 'paso-encabezado' }, h('h2', null, 'Fechas tentativas'),
+          h('p', { class: 'gris' }, 'Cuándo se recoge y cuándo se entrega. Logística confirma la fecha definitiva.')),
           h('div', { class: 'rejilla' },
             texto('fecha_requerida', 'Fecha tentativa de recolección', { req: true, tipo: 'date', min: cfg.hoy, aplica: function () { return !fechaAbierta(); } }),
             texto('fecha_entrega', 'Fecha tentativa de entrega', { req: true, tipo: 'date', min: cfg.hoy, aplica: function () { return !fechaAbierta(); } }),
@@ -557,16 +559,16 @@ window.API = API;
       if (op.modificar) enviar.textContent = 'Guardar cambios';
 
       var PASOS = [
-        { titulo: '¿Qué envías?', el: pasoQue },
-        { titulo: 'Solicitante', el: pasoSolicitante },
-        { titulo: '¿De dónde?', el: pasoOrigen },
-        { titulo: '¿A dónde?', el: pasoDestino },
-        { titulo: 'Tipo de servicio y especificaciones', el: pasoServicio },
-        { titulo: 'Devolución', el: pasoDevolucion, aplica: esTipo('devolucion') },
-        { titulo: '¿Quién absorbe el costo?', el: pasoCosto },
-        { titulo: 'Documentación', el: pasoDocs },
-        { titulo: 'Fechas tentativas', el: pasoFechas },
-        { titulo: 'Confirmación', el: pasoResumen }
+        { corto: 'Qué envías', titulo: '¿Qué envías?', el: pasoQue },
+        { corto: 'Solicitante', titulo: 'Solicitante', el: pasoSolicitante },
+        { corto: 'Origen', titulo: '¿De dónde?', el: pasoOrigen },
+        { corto: 'Destino', titulo: '¿A dónde?', el: pasoDestino },
+        { corto: 'Servicio', titulo: 'Tipo de servicio y especificaciones', el: pasoServicio },
+        { corto: 'Devolución', titulo: 'Devolución', el: pasoDevolucion, aplica: esTipo('devolucion') },
+        { corto: 'Costo', titulo: '¿Quién absorbe el costo?', el: pasoCosto },
+        { corto: 'Documentos', titulo: 'Documentación', el: pasoDocs },
+        { corto: 'Fechas', titulo: 'Fechas tentativas', el: pasoFechas },
+        { corto: 'Confirmar', titulo: 'Confirmación', el: pasoResumen }
       ];
       var paso = 0;
       var avance = h('div', { class: 'avance', 'aria-live': 'polite' });
@@ -595,8 +597,15 @@ window.API = API;
         paso = Math.max(0, Math.min(i, lista.length - 1));
         PASOS.forEach(function (x) { x.el.hidden = x !== lista[paso]; });
         var ultimo = paso === lista.length - 1;
+        /* Línea de pasos: los terminados se pueden abrir con un clic. */
         mount(avance, h('div', { class: 'avance-txt' }, h('b', null, 'Paso ' + (paso + 1) + ' de ' + lista.length), ' · ' + lista[paso].titulo),
-          h('div', { class: 'avance-barra' }, lista.map(function (x, k) { return h('span', { class: k <= paso ? 'hecho' : '' }); })));
+          h('ol', { class: 'stepper' }, lista.map(function (x, k) {
+            var estado = k < paso ? 'hecho' : k === paso ? 'actual' : '';
+            var punto = h('span', { class: 'punto', 'aria-hidden': 'true' }, k < paso ? '✓' : String(k + 1));
+            var etq = h('span', { class: 'etq' }, x.corto);
+            return h('li', { class: estado, 'aria-current': k === paso ? 'step' : null },
+              k < paso ? h('button', { type: 'button', title: 'Volver a ' + x.titulo, onclick: function () { mostrar(k); } }, punto, etq) : h('span', { class: 'paso-nodo' }, punto, etq));
+          })));
         anterior.hidden = paso === 0;
         anterior.textContent = ultimo ? '← Editar' : '← Anterior';
         siguiente.hidden = ultimo;
@@ -700,15 +709,16 @@ window.API = API;
         mostrar(paso + 1);
       });
 
-      var form = h('form', { novalidate: true },
-        h('h1', null, op.modificar ? 'Modificar ' + op.modificar.folio : 'Nueva solicitud'),
+      var form = h('form', { novalidate: true, class: 'asistente' },
+        h('div', { class: 'asistente-cabeza' }, h('h1', null, op.modificar ? 'Modificar ' + op.modificar.folio : 'Nueva solicitud'),
+          h('p', { class: 'gris' }, 'Te guiamos paso a paso. Al final revisas todo antes de enviarlo.')),
         op.copia ? h('div', { class: 'aviso aviso-info' }, h('p', null, 'Nueva solicitud con los datos de ' + op.copia.folio + '. Revisa las fechas y lo que cambió antes de enviarla; los archivos no se copian.')) : null,
         op.modificar ? h('div', { class: 'aviso aviso-info' }, h('p', null, 'Estás modificando ' + op.modificar.folio + '. Al guardar, Logística recibe un aviso con los cambios. Los archivos que ya subiste se conservan.')) : null,
         avance,
         pasoQue, pasoSolicitante, pasoOrigen, pasoDestino, pasoServicio, pasoDevolucion, pasoCosto, pasoDocs, pasoFechas, pasoResumen,
         feedback,
-        h('div', { class: 'acciones pasos-acciones' }, anterior, siguiente, enviar, h('span', { class: 'espacio' }),
-          h('button', { class: 'liga', type: 'button', onclick: cancelar }, 'Cancelar')));
+        h('div', { class: 'acciones pasos-acciones' }, h('button', { class: 'liga', type: 'button', onclick: cancelar }, 'Cancelar'), h('span', { class: 'espacio' }),
+          anterior, siguiente, enviar));
       if (cfg.sesion) {
         campos.correo.control.value = cfg.sesion.correo;
         campos.correo.control.readOnly = true;
