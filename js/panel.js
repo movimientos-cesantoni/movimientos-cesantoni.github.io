@@ -1,7 +1,7 @@
 /* Panel de Logística (Liga 2): base de solicitudes. Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=30';
-import { libroXlsx, zipArchivos } from './xlsx.js?v=30';
-import { analizarPlantilla, crearGenerador, fechaLarga, aBase64, deBase64 } from './plantilla.js?v=30';
+import * as API from './servidor.js?v=31';
+import { libroXlsx, zipArchivos } from './xlsx.js?v=31';
+import { analizarPlantilla, crearGenerador, fechaLarga, aBase64, deBase64 } from './plantilla.js?v=31';
 window.API = API;
 (function () {
     'use strict';

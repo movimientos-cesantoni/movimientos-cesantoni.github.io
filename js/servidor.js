@@ -4,7 +4,7 @@
  * La seguridad real la imponen las reglas de Firestore (firestore.rules, bloque «Solicitudes de movimientos»).
  */
 import * as fb from './firebase-sdk.js?v=13';
-import * as C from './catalogos.js?v=30';
+import * as C from './catalogos.js?v=31';
 
 const CFG = window.CP_CONFIG || {};
 const COL = { config: 'sm_config', admins: 'sm_admins', inv: 'sm_invitaciones', sol: 'sm_solicitudes', correos: 'sm_correos', aut: 'sm_autorizaciones' };
@@ -83,8 +83,11 @@ const tipoNombre = (k) => { const t = CAT.tipos.concat(C.TIPOS).find((x) => x[0]
 const prioridad = (p) => (p === 'Normal' ? 'Programado' : p || '');
 const esFecha = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
 function sumarDias(ymd, n) { const d = new Date(ymd + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
-/* Menos de 48 horas de anticipación: la fecha requerida cae antes de pasado mañana (se calcula por día, sin horas). */
-const fueraDeTiempo = (fecha) => esFecha(fecha) && fecha < sumarDias(hoy(), C.DIAS_ANTICIPACION);
+/* Corte de las 3:00 p. m.: después de esa hora, la solicitud cuenta como recibida al día siguiente. */
+const despuesDelCorte = () => Number(partesFecha().hour) >= C.HORA_CORTE;
+const diaOperativo = () => (despuesDelCorte() ? sumarDias(hoy(), 1) : hoy());
+/* Menos de 48 horas de anticipación: la fecha requerida cae antes de dos días después del día en que cuenta la solicitud. */
+const fueraDeTiempo = (fecha) => esFecha(fecha) && fecha < sumarDias(diaOperativo(), C.DIAS_ANTICIPACION);
 const productoNombre = (s) => (s.producto_tipo === 'Otro' ? s.producto_otro || 'Otro' : s.producto_tipo || '');
 const movimientoNombre = (s) => (s.tipo === 'otro' && s.tipo_otro ? 'Otro: ' + s.tipo_otro : tipoNombre(s.tipo));
 /* Un renglón de especificaciones: «10 × Caja de producto · 60 × 40 × 35 cm · 12 kg c/u (120 kg)». */
@@ -288,7 +291,7 @@ export function configPortal() {
   return { areas: CAT.areas, tipos: CAT.tipos, estados: C.ESTADOS, abiertos: C.ABIERTOS, cancelables: C.CANCELABLES,
     formas_envio: C.FORMAS_ENVIO, paqueteria: C.PAQUETERIA, factor_volumetrico: C.FACTOR_VOLUMETRICO,
     motivos_devolucion: C.MOTIVOS_DEVOLUCION, checklist: C.CHECKLIST_DEVOLUCION, max_mb: MAX_MB, hoy: hoy(),
-    limite_programado: sumarDias(hoy(), C.DIAS_ANTICIPACION), productos: CAT.productos, estados_mx: C.ESTADOS_MX, costos: C.COSTOS, costo_autoriza: C.COSTO_AUTORIZA,
+    limite_programado: sumarDias(diaOperativo(), C.DIAS_ANTICIPACION), despues_corte: despuesDelCorte(), dia_operativo: diaOperativo(), productos: CAT.productos, estados_mx: C.ESTADOS_MX, costos: C.COSTOS, costo_autoriza: C.COSTO_AUTORIZA,
     aut_estados: C.AUT_ESTADOS, condiciones: C.CONDICIONES, lugares: CAT.lugares,
     sesion: u ? { correo: u.email } : null };
 }

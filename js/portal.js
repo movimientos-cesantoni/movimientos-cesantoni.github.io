@@ -1,5 +1,5 @@
 /* Formulario y seguimiento de solicitudes (Liga 1). Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=30';
+import * as API from './servidor.js?v=31';
 window.API = API;
 (function () {
     'use strict';
@@ -533,6 +533,9 @@ window.API = API;
         h('section', { class: 'tarjeta paso-tarjeta' }, h('header', { class: 'paso-encabezado' }, h('h2', null, 'Fechas tentativas'),
           h('p', { class: 'gris' }, 'Cuándo se recoge y cuándo se entrega. Logística confirma la fecha definitiva.')),
           h('div', { class: 'rejilla' },
+            h('div', { class: 'aviso ' + (cfg.despues_corte ? 'aviso-alerta' : 'aviso-info') + ' todo corte' }, h('p', null,
+              cfg.despues_corte ? [h('b', null, 'Ya pasó la hora de corte (3:00 p. m.). '), 'Tu solicitud cuenta como recibida mañana, ' + U.dia(cfg.dia_operativo) + '. Para evitar sobrecostos, elige la recolección a partir del ' + U.dia(cfg.limite_programado) + '.']
+                : [h('b', null, 'Hora de corte: 3:00 p. m. '), 'Si envías hoy antes de esa hora, puedes pedir la recolección a partir del ' + U.dia(cfg.limite_programado) + ' sin sobrecosto.'])),
             texto('fecha_requerida', 'Fecha tentativa de recolección', { req: true, tipo: 'date', min: cfg.hoy, aplica: function () { return !fechaAbierta(); } }),
             texto('fecha_entrega', 'Fecha tentativa de entrega', { req: true, tipo: 'date', min: cfg.hoy, aplica: function () { return !fechaAbierta(); } }),
             casilla('fecha_abierta', null, 'Fecha abierta (aún no hay fecha definida)', { todo: true }),

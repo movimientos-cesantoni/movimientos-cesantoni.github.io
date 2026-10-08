@@ -25,10 +25,12 @@ export const PRIORIDADES = ["Programado","Urgente"];
 export const COSTOS = ["CESANTONI","Cliente","Proveedor","Otro"];
 export const COSTO_AUTORIZA = "CESANTONI";
 export const AUT_ESTADOS = ["Pendiente de autorización","Autorizado","Rechazado"];
-export const CONDICIONES = "Condiciones del servicio: Las fechas seleccionadas son tentativas y están sujetas a disponibilidad y confirmación del servicio. Las solicitudes deberán realizarse con al menos 48 horas de anticipación. Las solicitudes realizadas con menor anticipación podrán generar sobrecostos y requerirán autorización del Gerente de Área. La fecha definitiva será confirmada una vez que el servicio y, cuando corresponda, el costo hayan sido autorizados.";
+export const CONDICIONES = "Condiciones del servicio: Las fechas seleccionadas son tentativas y están sujetas a disponibilidad y confirmación del servicio. Las solicitudes deberán realizarse con al menos 48 horas de anticipación; las que se reciban después de las 3:00 p. m. cuentan como recibidas al día siguiente. Las solicitudes realizadas con menor anticipación podrán generar sobrecostos y requerirán autorización del Gerente de Área. La fecha definitiva será confirmada una vez que el servicio y, cuando corresponda, el costo hayan sido autorizados.";
 export const AUT_PENDIENTE = "Pendiente de autorización";
 /* Días mínimos de anticipación: con menos, la solicitud es urgente y requiere autorización del Gerente de Área. */
 export const DIAS_ANTICIPACION = 2;
+/* Hora de corte (hora del centro de México): lo que se pide desde esta hora cuenta como pedido al día siguiente. */
+export const HORA_CORTE = 15;
 export const ESTADOS = {"recibida":"Recibida","en_revision":"En revisión","informacion":"Falta información","programada":"Programada","en_transito":"En tránsito","completada":"Completada","cancelada":"Cancelada","rechazada":"No procede"};
 export const ABIERTOS = ["recibida","en_revision","informacion","programada","en_transito"];
 export const CANCELABLES = ["recibida","en_revision","informacion"];
