@@ -1,5 +1,5 @@
 /* Formulario y seguimiento de solicitudes (Liga 1). Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=18';
+import * as API from './servidor.js?v=19';
 window.API = API;
 (function () {
     'use strict';
@@ -28,7 +28,7 @@ window.API = API;
         { clave: 'modificar', icono: '✎', titulo: 'Modificar una solicitud', ayuda: 'Cambia un folio que aún no se revisa', accion: pantallaModificar },
         { clave: 'ayuda', icono: '❔', titulo: '¿Cómo funciona?', ayuda: 'Los pasos, explicados', accion: ayuda }
       ], activa, cfg.sesion ? [h('div', { class: 'lateral-usuario' }, h('span', null, 'Entraste como'), h('b', null, cfg.sesion.correo)),
-        h('button', { class: 'btn btn-chico', type: 'button', onclick: salir }, 'Salir')] : null);
+        h('button', { class: 'btn btn-chico', type: 'button', onclick: salir }, 'Salir')] : null, 'Solicitudes de movimientos');
     }
     function pantallaModificar() {
       acceso = null; arriba(null); menuPortal('modificar');
@@ -83,11 +83,11 @@ window.API = API;
         h('section', { class: 'tarjeta' },
           h('h1', null, '¿Necesitas mover algo?'),
           h('p', { class: 'gris' }, 'Pide aquí envíos, recolecciones, devoluciones y traslados a Logística: qué envías, de dónde sale, a dónde va, cómo se envía, quién paga y cuándo. Cada solicitud recibe un folio con su expediente y te avisamos por correo cada avance.'),
-          h('ul', { class: 'lista-tipos' }, [['¿Qué envías?', 'producto, mobiliario, sillas, stands, regalos, vinos…'], ['¿De dónde y a dónde?', 'ubicación, link y contacto'],
-            ['¿Cómo y cuánto?', 'unidad dedicada o paquetería, con medidas y peso'], ['¿Quién paga y cuándo?', 'costo, documentos y fechas tentativas']].map(function (t) {
-            return h('li', null, h('b', null, t[0]), ' · ', h('span', { class: 'gris' }, t[1]));
+          h('ul', { class: 'lista-tipos' }, [['¿Qué envías?', 'Producto, mobiliario, sillas, stands, regalos, vinos…'], ['¿De dónde y a dónde?', 'Ciudad, Estado, ubicación, link y contacto'],
+            ['¿Cómo y cuánto?', 'Unidad dedicada o paquetería, con medidas y peso'], ['¿Quién paga y cuándo?', 'Costo, documentos y fechas tentativas']].map(function (t) {
+            return h('li', null, h('b', null, t[0]), h('span', { class: 'gris' }, t[1]));
           })),
-          h('p', { style: 'margin-top:18px' }, h('button', { class: 'btn btn-pri', type: 'button', onclick: formulario }, 'Nueva solicitud'))),
+          h('p', null, h('button', { class: 'btn btn-pri', type: 'button', onclick: formulario }, 'Nueva solicitud'))),
         h('div', null,
           h('section', { class: 'tarjeta' },
             h('h2', null, 'Mis solicitudes'),
@@ -168,7 +168,8 @@ window.API = API;
           : h('div', { class: 'tarjeta', style: 'text-align:center' }, h('p', { class: 'gris' }, 'Aún no tienes solicitudes con este correo.'),
             h('button', { class: 'btn btn-pri', type: 'button', onclick: formulario }, 'Nueva solicitud'));
         mount(main, h('div', { class: 'cabecera', style: 'margin-bottom:14px' }, h('h1', { style: 'margin:0' }, 'Mis solicitudes'),
-          h('span', { class: 'gris chico' }, cfg.sesion.correo)), tabla, h('div', { class: 'mis-modificar' }, buscadorModificar()));
+          h('div', { class: 'acciones' }, h('span', { class: 'gris chico' }, cfg.sesion.correo),
+            h('button', { class: 'btn btn-pri', type: 'button', onclick: function () { formulario(); } }, 'Nueva solicitud'))), tabla, h('div', { class: 'mis-modificar' }, buscadorModificar()));
       }).catch(function (e) { if (e.sesion) { cfg.sesion = null; inicio(); } U.toast(e.message, true); });
     }
 

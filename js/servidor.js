@@ -4,7 +4,7 @@
  * La seguridad real la imponen las reglas de Firestore (firestore.rules, bloque «Solicitudes de movimientos»).
  */
 import * as fb from './firebase-sdk.js?v=13';
-import * as C from './catalogos.js?v=18';
+import * as C from './catalogos.js?v=19';
 
 const CFG = window.CP_CONFIG || {};
 const COL = { config: 'sm_config', admins: 'sm_admins', inv: 'sm_invitaciones', sol: 'sm_solicitudes', correos: 'sm_correos', aut: 'sm_autorizaciones' };
@@ -699,6 +699,7 @@ export async function adminActualizar(_t, folio, cambios) {
   }
   if (cambios.tipo && !CAT.tipos.concat(C.TIPOS).some((x) => x[0] === cambios.tipo)) throw fallo('Tipo de movimiento no válido.');
   if (cambios.concepto && !C.CONCEPTOS.includes(cambios.concepto)) throw fallo('Elige si es flete, maniobras o paquetería.');
+  ['origen_estado', 'destino_estado'].forEach((k) => { if (cambios[k] && !C.ESTADOS_MX.includes(cambios[k])) throw fallo('Elige el Estado de la lista.'); });
   if (cambios.folio_cstext) {
     cambios.folio_cstext = String(cambios.folio_cstext).trim().toUpperCase().replace(/^(\d+)$/, 'CSTEXT$1');
     const otro = (await getAll(donde(COL.sol, 'folio_cstext', cambios.folio_cstext))).find((x) => x.folio !== folio);
@@ -706,7 +707,7 @@ export async function adminActualizar(_t, folio, cambios) {
   }
   const t = ahora(), patch = { actualizada: t };
   ['folio_cstext', 'categorizacion', 'transportista', 'unidad_asignada', 'guia', 'fecha_programada', 'aut_gerente', 'aut_comentario', 'costo_cotizado',
-    'monto', 'origen_fact', 'destino_fact', 'cliente_fact', 'cst', 'tipo', 'concepto'].forEach((k) => {
+    'monto', 'origen_fact', 'destino_fact', 'cliente_fact', 'cst', 'tipo', 'concepto', 'origen_estado', 'destino_estado'].forEach((k) => {
     if (cambios[k] !== undefined) patch[k] = String(cambios[k]).trim().slice(0, k === 'aut_comentario' ? 1000 : 160);
   });
   /* Asignar la fecha a una solicitud con «Fecha abierta» sin crear una nueva. */

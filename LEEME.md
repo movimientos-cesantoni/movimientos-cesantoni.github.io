@@ -71,3 +71,12 @@ la tabla por proveedor de antes.
 Cada solicitud nueva recibe como folio su consecutivo CSTEXT (CSTEXT00760, CSTEXT00761…), que también es el CONSECUTIVO de la plantilla
 de facturación. El administrador fija desde qué número sigue en Configuración › Folio de solicitudes (se guarda en `sm_config/folio`).
 Los folios anteriores (SOL-0001…) se conservan.
+
+## Diseño (octubre 2026)
+
+Basado en la propuesta de diseño ejecutivo: menú desplegable (botón ☰) en portal y panel, encabezado con la pantalla actual
+(«Panel de Logística · Facturación»), Dashboard con periodo, departamento y concepto (evolución mensual, gasto por departamento,
+distribución por concepto y detalle) y Facturación por proveedor: pestañas Pendientes / Facturadas / Todas, mes de carga, proveedor,
+selección con casillas, «Ver detalle» (el planeador completa ahí Estados, concepto y subtotal) y «Preparar descarga» con dos opciones:
+plantilla de movimientos (un Excel por movimiento, ZIP con Fletes / Maniobras / Paquetería) o resumen consolidado (una hoja por proveedor).
+En la facturación, origen y destino son solo el Estado.

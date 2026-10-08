@@ -215,14 +215,58 @@ window.U = (function () {
       }));
   }
 
-  /* Menú lateral: items [{clave, icono, titulo, ayuda, accion}], la opción activa y un pie (usuario y «Salir»).
-     Cada botón se llama como su título; la ayuda corta solo orienta a quien es nuevo. */
-  function menu(destino, items, activa, pie) {
-    mount(destino, h('p', { class: 'lateral-titulo' }, 'Menú'), items.map(function (i) {
-      return h('button', { type: 'button', class: 'lateral-item', 'aria-label': i.titulo, 'aria-current': activa === i.clave ? 'page' : null, onclick: i.accion },
+  /* Menú desplegable: el botón ☰ del encabezado abre el menú sobre la página; Esc, la ✕ o el fondo lo cierran.
+     items [{clave, icono, titulo, ayuda, accion}], la opción activa, un pie (usuario y «Salir») y el nombre del menú. */
+  var cajon = null;
+  function prepararCajon(nav) {
+    if (cajon) return cajon;
+    var barra = document.querySelector('.barra-in');
+    var toggle = h('button', { type: 'button', id: 'menu-toggle', class: 'menu-toggle', 'aria-label': 'Abrir menú', 'aria-expanded': 'false', 'aria-controls': nav.id, hidden: true },
+      h('span'), h('span'), h('span'));
+    barra.insertBefore(toggle, barra.firstChild);
+    var fondo = h('button', { type: 'button', class: 'menu-fondo', 'aria-label': 'Cerrar menú', tabindex: '-1', hidden: true });
+    document.body.appendChild(fondo);
+    function abierto() { return document.body.classList.contains('menu-abierto'); }
+    function abrir() {
+      nav.hidden = false; fondo.hidden = false; document.body.classList.add('menu-abierto'); toggle.setAttribute('aria-expanded', 'true');
+      var x = nav.querySelector('.menu-cerrar'); if (x) x.focus();
+    }
+    function cerrar(foco) {
+      var estaba = abierto();
+      nav.hidden = true; fondo.hidden = true; document.body.classList.remove('menu-abierto'); toggle.setAttribute('aria-expanded', 'false');
+      if (estaba && foco !== false) toggle.focus();
+    }
+    toggle.addEventListener('click', abrir);
+    fondo.addEventListener('click', function () { cerrar(); });
+    document.addEventListener('keydown', function (e) {
+      if (!abierto()) return;
+      if (e.key === 'Escape') { cerrar(); return; }
+      if (e.key !== 'Tab') return;
+      var f = Array.prototype.slice.call(nav.querySelectorAll('button,a[href],input,select'));
+      if (!f.length) return;
+      if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+      else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+    });
+    cajon = { toggle: toggle, abrir: abrir, cerrar: cerrar };
+    return cajon;
+  }
+  function menu(destino, items, activa, pie, nombre) {
+    var c = prepararCajon(destino);
+    if (!items || !items.length) { mount(destino); c.cerrar(false); c.toggle.hidden = true; return; }
+    c.toggle.hidden = false;
+    if (!document.body.classList.contains('menu-abierto')) destino.hidden = true;
+    mount(destino, h('div', { class: 'menu-cabecera' }, h('b', null, nombre || 'Menú'),
+      h('button', { type: 'button', class: 'menu-cerrar', 'aria-label': 'Cerrar menú', onclick: function () { c.cerrar(); } }, '×')),
+    h('p', { class: 'lateral-titulo' }, 'Menú'), items.map(function (i) {
+      return h('button', { type: 'button', class: 'lateral-item', 'aria-label': i.titulo, 'aria-current': activa === i.clave ? 'page' : null,
+        onclick: function () { c.cerrar(false); i.accion(); } },
         h('span', { class: 'lateral-icono', 'aria-hidden': 'true' }, i.icono),
         h('span', { class: 'lateral-texto' }, h('b', null, i.titulo), i.ayuda ? h('small', null, i.ayuda) : null));
-    }), pie ? h('div', { class: 'lateral-pie' }, pie) : null);
+    }), pie ? h('div', { class: 'lateral-pie', onclick: function (e) { if (e.target.closest('button')) c.cerrar(false); } }, pie) : null);
+    /* El encabezado dice en qué pantalla estás: «Panel de Logística · Facturación». */
+    var actual = items.filter(function (i) { return i.clave === activa; })[0];
+    var titulo = document.querySelector('.barra .titulo-app');
+    if (titulo) titulo.textContent = (nombre || 'Solicitudes de movimientos') + (actual ? ' · ' + actual.titulo : '');
   }
 
   /* Archivos: los enlaces «#archivo:FOLIO:ID» se abren armando el archivo desde la base. */

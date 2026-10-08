@@ -1,7 +1,7 @@
 /* Panel de Logística (Liga 2): base de solicitudes. Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=18';
-import { libroXlsx, libroBytes, zipArchivos } from './xlsx.js?v=18';
-import { analizarPlantilla, crearGenerador, fechaLarga, aBase64, deBase64 } from './plantilla.js?v=18';
+import * as API from './servidor.js?v=19';
+import { libroXlsx, zipArchivos } from './xlsx.js?v=19';
+import { analizarPlantilla, crearGenerador, fechaLarga, aBase64, deBase64 } from './plantilla.js?v=19';
 window.API = API;
 (function () {
     'use strict';
@@ -54,15 +54,14 @@ window.API = API;
     /* Menú lateral según el perfil. Cada opción explica en una línea para qué sirve. */
     function nav(activa) {
       var destino = document.getElementById('nav');
-      if (!yo || yo.debe_cambiar) { mount(destino); destino.hidden = true; return; }
-      destino.hidden = false;
+      if (!yo || yo.debe_cambiar) { U.menu(destino, []); return; }
       var items = [];
       if (yo.rol !== 'facturacion') items.push({ clave: 'solicitudes', icono: '📋', titulo: 'Solicitudes', ayuda: 'Ver y atender los pedidos', accion: function () { cargar().then(tablero); } });
       if (yo.rol !== 'planeador') items.push({ clave: 'facturacion', icono: '🧾', titulo: 'Facturación', ayuda: 'Plantillas por proveedor', accion: function () { cargar().then(facturacion); } });
-      items.push({ clave: 'gastos', icono: '📊', titulo: 'Gastos', ayuda: 'Cuánto gasta cada departamento', accion: function () { cargar().then(gastos); } });
+      items.push({ clave: 'gastos', icono: '📊', titulo: 'Dashboard', ayuda: 'Gastos por departamento', accion: function () { cargar().then(gastos); } });
       items.push({ clave: 'config', icono: '⚙️', titulo: 'Configuración', ayuda: yo.rol === 'admin' ? 'Personal, alertas y catálogos' : 'Mi cuenta y contraseña', accion: configuracion });
       U.menu(destino, items, activa, [h('div', { class: 'lateral-usuario' }, h('b', null, yo.nombre), h('span', null, rolNombre(yo.rol))),
-        h('button', { type: 'button', class: 'btn btn-chico', onclick: salir }, 'Salir')]);
+        h('button', { type: 'button', class: 'btn btn-chico', onclick: salir }, 'Salir')], 'Panel de Logística');
     }
     /* Encabezado de cada pantalla: título y una línea que dice qué hacer aquí. */
     function encabezado(titulo, ayuda, acciones) {
@@ -229,12 +228,12 @@ window.API = API;
       mount(main,
         encabezado('Solicitudes', 'Aquí llegan los pedidos de las áreas. Da clic en una solicitud para atenderla: cambia su estatus, programa la fecha de carga y captura el monto.', acciones),
         kpis,
-        h('div', { class: 'filtros' },
+        h('section', { class: 'tarjeta' }, h('h2', null, 'Consulta de solicitudes'), h('div', { class: 'filtros', style: 'margin:0' },
           h('div', { class: 'busqueda' }, campo('Buscar', q)),
           campo('Ver', vistaSel),
           campo('Departamento', filtro('area', lista([['', 'Todos']].concat(departamentos().map(function (a) { return [a, a]; })), filtros.area))),
           campo('Responsable', filtro('responsable', lista([['', 'Todos']].concat(datos.usuarios.map(function (u) { return [u.usuario, u.nombre]; })), filtros.responsable))),
-          h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { filtros = { vista: 'todas', q: '', tipo: '', area: '', prioridad: '', responsable: '' }; tablero(); } }, 'Limpiar')),
+          h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { filtros = { vista: 'todas', q: '', tipo: '', area: '', prioridad: '', responsable: '' }; tablero(); } }, 'Limpiar'))),
         tabla);
       pintarKpis();
       pintar();
@@ -315,8 +314,8 @@ window.API = API;
       var cstext = h('input', { class: 'entrada', value: s.folio_cstext || '', maxlength: 20, disabled: !esAdmin, placeholder: 'Es el folio de la solicitud' });
       var monto = h('input', { class: 'entrada', inputmode: 'decimal', value: s.monto ? Number(s.monto).toFixed(2) : '', placeholder: '0.00' });
       var tipoMov = lista(datos.tipos.map(function (t) { return [t[0], t[1]]; }), s.tipo);
-      var oFact = h('input', { class: 'entrada', value: s.origen_fact || '', maxlength: 160, placeholder: 'Ej. CALERA, ZACATECAS' });
-      var dFact = h('input', { class: 'entrada', value: s.destino_fact || '', maxlength: 160, placeholder: 'Ej. GÓMEZ PALACIO, DURANGO' });
+      var estados = [['', 'Selecciona…']].concat(cfg.estados_mx.map(function (e) { return [e, e]; }));
+      var oEst = lista(estados, s.origen_estado), dEst = lista(estados, s.destino_estado);
       var cliFact = h('input', { class: 'entrada', value: s.cliente_fact || '', maxlength: 160, placeholder: String((s.costo_absorbe === 'Otro' ? s.costo_detalle : s.costo_absorbe) || 'CESANTONI').toUpperCase() });
       var maniobra = lista([['No', 'No'], ['Sí', 'Sí']], s.maniobra || 'No');
       var concepto = lista([['', 'Selecciona…']].concat(datos.conceptos.map(function (c) { return [c, c]; })), s.concepto);
@@ -351,7 +350,7 @@ window.API = API;
           fent ? campo('Fecha tentativa de entrega' + (s.fecha_abierta === 'Sí' ? ' (abierta: asígnala aquí)' : ''), fent) : null,
           frec ? campo((nuevo ? 'Recolección posterior' : 'Fecha de recolección') + (s.recoleccion_abierta === 'Sí' ? ' (abierta: asígnala aquí)' : ''), frec) : null,
           h('h3', { class: 'todo', style: 'margin:6px 0 0' }, 'Plantilla de facturación'),
-          campo('Origen', oFact), campo('Destino', dFact), campo('Cliente', cliFact), campo('Requiere factura de maniobra', maniobra), campo('CST', cstCampo),
+          campo('Estado de origen', oEst), campo('Estado de destino', dEst), campo('Cliente', cliFact), campo('Requiere factura de maniobra', maniobra), campo('CST', cstCampo),
           campo('Notas internas (no las ve quien solicita)', notas, 'todo'),
           campo('Mensaje', mensaje, 'todo'), catalogos),
         h('p', { class: 'gris chico' }, 'El monto, la fecha de carga y los datos de la plantilla alimentan la vista de Facturación. El folio de la solicitud es su consecutivo CSTEXT.'),
@@ -365,7 +364,7 @@ window.API = API;
         U.ocupado(guardar, true, 'Guardando…');
         var cambios = { estado: estado.value, responsable: resp.value, transportista: transp.value, unidad_asignada: unidad.value,
           guia: guia.value, fecha_programada: fprog.value, categorizacion: categ.value, monto: monto.value, tipo: tipoMov.value,
-          origen_fact: oFact.value, destino_fact: dFact.value, cliente_fact: cliFact.value, maniobra: maniobra.value, cst: cstCampo.value, concepto: concepto.value,
+          origen_estado: oEst.value, destino_estado: dEst.value, cliente_fact: cliFact.value, maniobra: maniobra.value, cst: cstCampo.value, concepto: concepto.value,
           fecha_requerida: freq.value !== (s.fecha_requerida || '') ? freq.value : undefined,
           fecha_entrega: fent && fent.value !== (s.fecha_entrega || '') ? fent.value : undefined,
           fecha_recoleccion: frec && frec.value !== (s.fecha_recoleccion || '') ? frec.value : undefined };
@@ -442,10 +441,12 @@ window.API = API;
     function dinero(v) { return v === '' || v === undefined || v === null || isNaN(Number(v)) ? '' : '$' + Number(v).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
     var MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
     function diaCorto(ymd) { return /^\d{4}-\d{2}-\d{2}/.test(ymd || '') ? ymd.slice(8, 10) + '-' + MESES[Number(ymd.slice(5, 7)) - 1] + '-' + ymd.slice(2, 4) : ''; }
+    /* Origen y destino en la facturación: solo el Estado (en mayúsculas). */
+    function soloEstado(s, lado) { return String(s[lado + '_estado'] || '').toUpperCase(); }
     /* Columnas de la plantilla (como la de Fletes): [título, tipo en Excel, ancho, valor]. */
     var COLS_FACT = [
-      ['ORIGEN', 'izq', 26, function (s) { return s.origen_fact; }],
-      ['DESTINO', 'izq', 26, function (s) { return s.destino_fact; }],
+      ['ORIGEN', 'izq', 26, function (s) { return soloEstado(s, 'origen'); }],
+      ['DESTINO', 'izq', 26, function (s) { return soloEstado(s, 'destino'); }],
       ['FECHA CARGA', 'fecha', 12, function (s) { return s.fecha_programada || String(s.cerrada || '').slice(0, 10); }],
       ['MONTO', 'moneda', 13, function (s) { return s.monto === '' ? '' : Number(s.monto); }],
       ['CONSECUTIVO', 'texto', 15, function (s) { return s.folio_cstext; }],
@@ -455,8 +456,9 @@ window.API = API;
       ['SOLICITANTE', 'texto', 22, function (s) { return String(s.area || '').toUpperCase(); }]
     ];
     /* Filtros de facturación: estatus, mes de carga (AAAA-MM) y facturadas o pendientes. */
-    var ESTATUS_FACT = [['completada', 'Completadas'], ['en_transito', 'En tránsito'], ['programada', 'Programadas'], ['activas', 'Todas']];
-    var filtrosFact = { estatus: 'completada', mes: '', ver: 'pendientes' };
+    /* Facturación: entregas completadas, por mes de carga y proveedor; pestañas pendientes / facturadas / todas. */
+    var filtrosFact = { ver: 'pendientes', mes: '', proveedor: '' };
+    var seleccionFact = {}, abiertoFact = '';
     var MESES_LARGO = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
     function mesTexto(m) { return /^\d{4}-\d{2}$/.test(m || '') ? MESES_LARGO[Number(m.slice(5, 7)) - 1] + ' ' + m.slice(0, 4) : 'todos los meses'; }
     function bajarArchivo(blob, nombre) {
@@ -478,237 +480,332 @@ window.API = API;
     var TIPO_FORMATO = { Flete: 'FLETE', Maniobras: 'MANIOBRAS', 'Paquetería': 'PAQUETERIA' };
     function valoresFormato(s) {
       var M = function (t) { return String(t || '').toUpperCase(); };
-      return { fecha: LUGAR + fechaLarga(s.fecha_programada || String(s.creada || '').slice(0, 10)), origen: 'ORIGEN: ' + M(s.origen_fact), destino: 'DESTINO: ' + M(s.destino_fact),
+      return { fecha: LUGAR + fechaLarga(s.fecha_programada || String(s.creada || '').slice(0, 10)), origen: 'ORIGEN: ' + soloEstado(s, 'origen'), destino: 'DESTINO: ' + soloEstado(s, 'destino'),
         folio: s.folio_cstext || s.folio, subtotal: Number(s.monto) || 0, transportista: s.transportista || '', tipo: TIPO_FORMATO[s.concepto] || M(s.concepto),
-        observaciones: 'MOVIMIENTO A ' + M(s.destino_fact) + (s.producto ? ' · ' + M(s.producto) : '') + (s.area ? ' · ' + M(s.area) : '') };
+        observaciones: 'MOVIMIENTO A ' + M(s.destino) + (s.producto ? ' · ' + M(s.producto) : '') + (s.area ? ' · ' + M(s.area) : '') };
     }
     var limpioArchivo = function (t) { return String(t).replace(/[^\wÁÉÍÓÚÑáéíóúñ-]+/g, '_'); };
     function facturacion() {
       nav('facturacion');
       if (!datos) { mount(main, h('p', { class: 'gris' }, 'Cargando…')); return; }
-      var cont = h('div');
-      var esAdmin = yo.rol === 'admin';
+      var esAdmin = yo.rol === 'admin', edita = yo.rol !== 'facturacion';
       var fecha = function (s) { return s.fecha_programada || String(s.cerrada || '').slice(0, 10); };
-      var columnas = function (extra) {
-        return COLS_FACT.concat(extra ? [['CONCEPTO', 'texto', 12, function (s) { return s.concepto || 'Sin definir'; }], ['ESTATUS', 'texto', 14, function (s) { return cfg.estados[s.estado] || s.estado; }],
-          ['FOLIO', 'texto', 15, function (s) { return s.folio; }], ['FACTURADA', 'fecha', 12, function (s) { return s.facturada || ''; }]] : []);
-      };
-      var hoja = function (nombre, items, extra) {
-        var cols = columnas(extra);
+      var monto = function (lista) { return lista.reduce(function (t, s) { return t + (Number(s.monto) || 0); }, 0); };
+      var proveedorDe = function (s) { return s.transportista || 'Sin proveedor asignado'; };
+      /* Lo que le falta a un movimiento para generar su formato. */
+      function faltantes(s) {
+        var f = [];
+        if (s.monto === '') f.push('subtotal');
+        if (!s.concepto) f.push('concepto');
+        if (!s.origen_estado) f.push('Estado de origen');
+        if (!s.destino_estado) f.push('Estado de destino');
+        if (!s.transportista) f.push('transportista');
+        else if (datos.plantilla && datos.plantilla.transportistas.indexOf(s.transportista) < 0) f.push('transportista igual que en la plantilla');
+        return f;
+      }
+      function base() {
+        return datos.solicitudes.filter(function (s) {
+          return s.estado === 'completada' && (!filtrosFact.mes || fecha(s).slice(0, 7) === filtrosFact.mes) &&
+            (!filtrosFact.proveedor || proveedorDe(s) === filtrosFact.proveedor);
+        });
+      }
+      function filas() { return base().filter(function (s) { return filtrosFact.ver === 'todas' || (filtrosFact.ver === 'facturadas') === !!s.facturada; }); }
+      function grupos() {
+        var mapa = {};
+        filas().forEach(function (s) { var p = proveedorDe(s); (mapa[p] = mapa[p] || []).push(s); });
+        return Object.keys(mapa).sort().map(function (p) { return { proveedor: p, items: mapa[p].sort(function (a, b) { return fecha(a).localeCompare(fecha(b)); }) }; });
+      }
+      var elegidos = function () { return grupos().filter(function (g) { return seleccionFact[g.proveedor]; }); };
+      var CARPETA = { Flete: 'Fletes', Maniobras: 'Maniobras', 'Paquetería': 'Paquetería' };
+      var sufijo = function () { return (filtrosFact.mes || cfg.hoy); };
+      /* Resumen consolidado: una hoja por proveedor (columnas del formato anterior; origen y destino solo con el Estado). */
+      var hoja = function (nombre, items) {
+        var cols = COLS_FACT.concat([['CONCEPTO', 'texto', 12, function (s) { return s.concepto || 'Sin definir'; }], ['FOLIO', 'texto', 15, function (s) { return s.folio; }],
+          ['FACTURADA', 'fecha', 12, function (s) { return s.facturada || ''; }]]);
         return { nombre: nombre, columnas: cols.map(function (c) { return { titulo: c[0], tipo: c[1], ancho: c[2] }; }),
           filas: items.map(function (s) { return cols.map(function (c) { return c[3](s); }); }) };
       };
-      function grupos() {
-        var mapa = {};
-        datos.solicitudes.filter(function (s) {
-          var f = fecha(s);
-          var estatus = filtrosFact.estatus === 'activas' ? ['programada', 'en_transito', 'completada'].indexOf(s.estado) >= 0 : s.estado === filtrosFact.estatus;
-          return estatus && (!filtrosFact.mes || f.slice(0, 7) === filtrosFact.mes) &&
-            (filtrosFact.ver === 'todas' || (filtrosFact.ver === 'facturadas') === !!s.facturada);
-        }).forEach(function (s) { var p = s.transportista || 'Sin proveedor asignado'; (mapa[p] = mapa[p] || []).push(s); });
-        return Object.keys(mapa).sort().map(function (p) { return { proveedor: p, items: mapa[p].sort(function (a, b) { return fecha(a).localeCompare(fecha(b)); }) }; });
+      function guardarDato(s, cambios, control) {
+        if (control) control.disabled = true;
+        return run('adminActualizar', s.folio, cambios).then(function (r) {
+          Object.keys(cambios).forEach(function (k) { s[k] = r[k] !== undefined ? r[k] : cambios[k]; });
+          U.toast('Guardado en ' + (s.folio_cstext || s.folio) + '.');
+          pintar();
+        }).catch(function (e) { if (control) control.disabled = false; fallo(e); });
       }
-      /* Fletes, maniobras y paquetería van en plantillas separadas; si salen varias, se descargan juntas en un ZIP con una carpeta por concepto. */
-      var CARPETA = { Flete: 'Fletes', Maniobras: 'Maniobras', 'Paquetería': 'Paquetería' };
-      var carpeta = function (s) { return CARPETA[s.concepto] || 'Sin definir'; };
-      var sufijo = function () { return (filtrosFact.mes || cfg.hoy); };
-      /* Con la plantilla de movimientos: un formato por movimiento, en «Fletes/PROVEEDOR/CSTEXT….xlsx» o «Maniobras/…».
-         Sin plantilla (aún no la sube el administrador): la tabla simple por proveedor y concepto. */
-      function archivosDe(lista, gen) {
-        var archivos = [];
-        lista.forEach(function (g) {
-          if (gen) {
-            g.items.forEach(function (s) {
-              var folio = s.folio_cstext || s.folio;
-              archivos.push({ ruta: carpeta(s) + '/' + limpioArchivo(g.proveedor) + '/' + folio + '.xlsx', solo: folio + '_' + limpioArchivo(g.proveedor) + '.xlsx',
-                bytes: gen(valoresFormato(s)) });
-            });
-            return;
-          }
-          var porCarpeta = {};
-          g.items.forEach(function (s) { (porCarpeta[carpeta(s)] = porCarpeta[carpeta(s)] || []).push(s); });
-          Object.keys(porCarpeta).sort().forEach(function (c) {
-            var nombre = 'Plantilla_' + limpioArchivo(g.proveedor) + '_' + (c === 'Sin definir' ? 'Sin_definir' : c) + '_' + sufijo() + '.xlsx';
-            archivos.push({ ruta: c + '/' + nombre, solo: nombre, bytes: libroBytes([hoja(g.proveedor, porCarpeta[c], false)]) });
-          });
-        });
-        return archivos;
+      function detalleProveedor(g) {
+        var estados = [['', 'Selecciona…']].concat(cfg.estados_mx.map(function (e) { return [e, e]; }));
+        var celdaEstado = function (s, lado) {
+          if (!edita) return s[lado + '_estado'] || h('span', { class: 'pill e-en_revision' }, 'Falta');
+          var sel = lista(estados, s[lado + '_estado']);
+          sel.setAttribute('aria-label', (lado === 'origen' ? 'Estado de origen de ' : 'Estado de destino de ') + (s.folio_cstext || s.folio));
+          sel.addEventListener('change', function () { var c = {}; c[lado + '_estado'] = sel.value; guardarDato(s, c, sel); });
+          return sel;
+        };
+        var celdaMonto = function (s) {
+          if (s.monto !== '' || !edita) return s.monto !== '' ? dinero(s.monto) : h('span', { class: 'pill e-en_revision' }, 'Falta');
+          var inp = h('input', { class: 'entrada', inputmode: 'decimal', placeholder: 'Capturar subtotal', 'aria-label': 'Subtotal de ' + (s.folio_cstext || s.folio) });
+          inp.addEventListener('change', function () { if (inp.value.trim()) guardarDato(s, { monto: inp.value }, inp); });
+          return inp;
+        };
+        var celdaConcepto = function (s) {
+          if (s.concepto || !edita) return s.concepto || h('span', { class: 'pill e-en_revision' }, 'Falta');
+          var sel = lista([['', 'Selecciona…']].concat(datos.conceptos.map(function (c) { return [c, c]; })), '');
+          sel.setAttribute('aria-label', 'Concepto de ' + (s.folio_cstext || s.folio));
+          sel.addEventListener('change', function () { if (sel.value) guardarDato(s, { concepto: sel.value }, sel); });
+          return sel;
+        };
+        return h('tr', { class: 'fact-detail sin-clic' }, h('td', { colspan: '6' },
+          h('p', null, 'Movimientos de ' + g.proveedor + '. ' + (edita ? 'Completa aquí lo que falte; se guarda en la solicitud.' : 'Lo que falte lo completa el planeador en la solicitud.')),
+          h('div', { class: 'tabla-caja' }, h('table', null,
+            h('thead', null, h('tr', null, ['Folio', 'Fecha de carga', 'Estado de origen', 'Estado de destino', 'Concepto', 'Monto', 'Facturación', ''].map(function (t, i) { return h('th', { class: i === 5 ? 'right' : null }, t); }))),
+            h('tbody', null, g.items.map(function (s) {
+              var abrir = h('button', { class: 'liga', type: 'button', onclick: function () { detalle(s.folio); } }, s.folio_cstext || s.folio);
+              var bajar = h('button', { class: 'btn btn-chico', type: 'button', 'aria-label': 'Descargar formato ' + (s.folio_cstext || s.folio) }, '⬇');
+              bajar.addEventListener('click', function () { generar('plantilla', [{ proveedor: g.proveedor, items: [s] }], bajar).catch(function (e) { U.toast(e.message, true); }); });
+              return h('tr', { class: 'sin-clic' }, h('td', null, abrir), h('td', null, diaCorto(fecha(s))), h('td', null, celdaEstado(s, 'origen')), h('td', null, celdaEstado(s, 'destino')),
+                h('td', null, celdaConcepto(s)), h('td', { class: 'right' }, celdaMonto(s)),
+                h('td', null, s.facturada ? U.dia(s.facturada) : 'Pendiente'), h('td', null, bajar));
+            }))))));
       }
-      function cuantosArchivos(g) {
-        if (datos.plantilla) return g.items.length;
-        return Object.keys(g.items.reduce(function (m, s) { m[carpeta(s)] = 1; return m; }, {})).length;
-      }
-      function descargarFormatos(lista, nombreZip, boton) {
+      /* Genera la descarga: «plantilla» (un formato por movimiento, ZIP con Fletes/Maniobras/Paquetería) o «resumen» (Excel consolidado). */
+      function generar(tipo, lista, boton) {
+        var items = lista.reduce(function (t, g) { return t.concat(g.items); }, []);
+        if (tipo === 'resumen') {
+          bajarArchivo(libroXlsx(lista.map(function (g) { return hoja(g.proveedor, g.items); })), 'Facturacion_' + sufijo() + '.xlsx');
+          return Promise.resolve();
+        }
+        if (!datos.plantilla) return Promise.reject(new Error('Aún no se ha subido la plantilla de movimientos. Usa «Resumen consolidado» o pide al administrador que la suba en Configuración.'));
+        var malos = items.filter(function (s) { return faltantes(s).length; });
+        if (malos.length) {
+          return Promise.reject(new Error('Falta completar ' + malos.map(function (s) { return (s.folio_cstext || s.folio) + ' (' + faltantes(s).join(', ') + ')'; }).join('; ') +
+            '. Revísalo en «Ver detalle».'));
+        }
         if (boton) U.ocupado(boton, true, 'Preparando…');
         return obtenerGenerador().then(function (gen) {
-          var archivos = archivosDe(lista, gen);
+          var archivos = items.map(function (s) {
+            var folio = s.folio_cstext || s.folio;
+            return { ruta: CARPETA[s.concepto] + '/' + limpioArchivo(proveedorDe(s)) + '/' + folio + '.xlsx', solo: folio + '_' + limpioArchivo(proveedorDe(s)) + '.xlsx', bytes: gen(valoresFormato(s)) };
+          });
           if (archivos.length === 1) bajarArchivo(new Blob([archivos[0].bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), archivos[0].solo);
-          else bajarArchivo(zipArchivos(archivos.map(function (a) { return { nombre: a.ruta, bytes: a.bytes }; })), nombreZip);
-        }).catch(fallo).then(function () { if (boton) U.ocupado(boton, false); });
+          else bajarArchivo(zipArchivos(archivos.map(function (a) { return { nombre: a.ruta, bytes: a.bytes }; })), 'Formatos_' + sufijo() + '.zip');
+        }).then(function () { if (boton) U.ocupado(boton, false); }, function (e) { if (boton) U.ocupado(boton, false); throw e; });
       }
-      function descargar(g, boton) { return descargarFormatos([g], 'Formatos_' + limpioArchivo(g.proveedor) + '_' + sufijo() + '.zip', boton); }
-      function descargarTodas(ev) {
-        var lista = grupos();
-        if (!lista.length) { U.toast('No hay entregas con estos filtros.', true); return; }
-        descargarFormatos(lista, 'Formatos_' + sufijo() + '.zip', ev && ev.currentTarget);
+      var dialogo = h('dialog', { class: 'fact-dialog', 'aria-label': 'Preparar descarga' });
+      function abrirDialogo() {
+        var lista = elegidos(), items = lista.reduce(function (t, g) { return t.concat(g.items); }, []);
+        var malos = items.filter(function (s) { return faltantes(s).length; }).length;
+        var opcion = function (valor, titulo, texto, marcado, deshabilitado) {
+          return h('label', { class: 'opcion' + (deshabilitado ? ' deshabilitada' : '') }, h('input', { type: 'radio', name: 'f-formato', value: valor, checked: marcado, disabled: deshabilitado }),
+            h('span', null, h('b', null, titulo), h('small', null, texto)));
+        };
+        var err = h('p', { class: 'chico', role: 'alert', style: 'color:var(--mal)' });
+        var btn = h('button', { class: 'btn btn-pri', type: 'button' }, 'Generar descarga');
+        btn.addEventListener('click', function () {
+          err.textContent = '';
+          var tipo = (dialogo.querySelector('input[name="f-formato"]:checked') || {}).value;
+          generar(tipo, lista, btn).then(function () { dialogo.close(); }).catch(function (e) { err.textContent = e.message; });
+        });
+        mount(dialogo, h('h2', null, 'Preparar descarga'),
+          h('p', { class: 'gris' }, items.length + (items.length === 1 ? ' movimiento' : ' movimientos') + ' · ' + lista.length + (lista.length === 1 ? ' proveedor' : ' proveedores')),
+          opcion('plantilla', 'Plantilla de movimientos', datos.plantilla ? 'Tu formato original, lleno automáticamente. Un Excel por movimiento; varios se reúnen en ZIP con carpetas Fletes, Maniobras y Paquetería.'
+            : 'Aún no se ha subido la plantilla en Configuración.', !!datos.plantilla, !datos.plantilla),
+          opcion('resumen', 'Resumen consolidado', 'Un Excel con una hoja por proveedor; origen y destino muestran solo el Estado.', !datos.plantilla, false),
+          malos ? h('div', { class: 'aviso aviso-alerta' }, h('p', null, malos + (malos === 1 ? ' movimiento no tiene' : ' movimientos no tienen') + ' todos sus datos (subtotal, concepto o Estados). Complétalos en «Ver detalle» antes de generar su plantilla.')) : null,
+          h('p', { class: 'chico gris' }, 'Se conservan las hojas, logos, formato y fórmulas de tu plantilla. Descargar no marca los movimientos como facturados.'),
+          err,
+          h('div', { class: 'acciones' }, h('button', { class: 'btn', type: 'button', onclick: function () { dialogo.close(); } }, 'Cancelar'), btn));
+        dialogo.showModal();
       }
-      /* Administrador: un solo Excel del mes, con una hoja por proveedor y un resumen al inicio. */
-      function descargarMes() {
-        var lista = grupos();
-        if (!lista.length) { U.toast('No hay entregas con estos filtros.', true); return; }
-        var resumen = { nombre: 'Resumen', columnas: [{ titulo: 'PROVEEDOR', tipo: 'izq', ancho: 30 }, { titulo: 'ENTREGAS', tipo: 'texto', ancho: 12 },
-          { titulo: 'MONTO TOTAL', tipo: 'moneda', ancho: 16 }, { titulo: 'SIN MONTO', tipo: 'texto', ancho: 12 }],
-          filas: lista.map(function (g) {
-            return [g.proveedor, String(g.items.length), g.items.reduce(function (t, s) { return t + (Number(s.monto) || 0); }, 0),
-              String(g.items.filter(function (s) { return s.monto === ''; }).length)];
-          }) };
-        bajarArchivo(libroXlsx([resumen].concat(lista.map(function (g) { return hoja(g.proveedor, g.items, true); }))),
-          'Facturacion_' + (filtrosFact.mes || 'todos') + '_' + limpioArchivo(ESTATUS_FACT.filter(function (e) { return e[0] === filtrosFact.estatus; })[0][1].split(' ')[0]) + '.xlsx');
-      }
+      var resumenCaja = h('div'), trabajo = h('section', { class: 'fact-work' });
       function pintar() {
-        var lista = grupos();
-        var resumen = lista.reduce(function (t, g) { return { n: t.n + g.items.length, monto: t.monto + g.items.reduce(function (x, s) { return x + (Number(s.monto) || 0); }, 0) }; }, { n: 0, monto: 0 });
-        mount(cabeceraMes, h('p', { class: 'gris chico', style: 'margin:0' }, h('b', null, mesTexto(filtrosFact.mes)), ' · ' + resumen.n + (resumen.n === 1 ? ' entrega' : ' entregas') +
-          ' de ' + lista.length + (lista.length === 1 ? ' proveedor' : ' proveedores') + ' · total ' + (dinero(resumen.monto) || '$0.00')));
-        if (!lista.length) { mount(cont, h('div', { class: 'tarjeta', style: 'text-align:center' }, h('p', { class: 'gris', style: 'margin:0' }, 'No hay entregas con estos filtros.'))); return; }
-        mount(cont, lista.map(function (g) {
-          var total = g.items.reduce(function (t, s) { return t + (Number(s.monto) || 0); }, 0);
-          var faltan = g.items.filter(function (s) { return s.monto === '' || !s.folio_cstext; }).length;
-          var sinConcepto = g.items.filter(function (s) { return !s.concepto; }).length;
-          var pendientes = g.items.filter(function (s) { return !s.facturada; });
-          var varias = cuantosArchivos(g) > 1, nombreBoton = datos.plantilla ? (varias ? '⬇ Descargar formatos (ZIP)' : '⬇ Descargar formato (Excel)')
-            : (varias ? '⬇ Descargar plantillas (ZIP)' : '⬇ Descargar plantilla (Excel)');
-          var bajar = h('button', { class: 'btn btn-pri btn-chico', type: 'button' }, nombreBoton);
-          bajar.addEventListener('click', function () { descargar(g, bajar); });
-          var fueraDeTabla = datos.plantilla ? g.items.filter(function (s) { return datos.plantilla.transportistas.indexOf(s.transportista) < 0; }).length : 0;
-          /* Solo las entregas concluidas se marcan como facturadas. */
-          var marcar = filtrosFact.estatus !== 'completada' ? null : h('button', { class: 'btn btn-chico', type: 'button' }, pendientes.length ? 'Marcar como facturadas' : 'Quitar marca de facturadas');
-          if (marcar) marcar.addEventListener('click', function () {
+        var b = base(), grp = grupos(), todas = filas();
+        Object.keys(seleccionFact).forEach(function (p) { if (!grp.some(function (g) { return g.proveedor === p; })) delete seleccionFact[p]; });
+        var sel = elegidos(), selItems = sel.reduce(function (t, g) { return t.concat(g.items); }, []);
+        var pend = b.filter(function (s) { return !s.facturada; }), porCompletar = b.filter(function (s) { return faltantes(s).length; }).length;
+        var stat = function (t, v, n) { return h('div', { class: 'fact-stat' }, h('span', null, t), h('b', null, v), h('small', null, n)); };
+        mount(resumenCaja, h('div', { class: 'fact-overview' },
+          stat('Pendientes de facturar', String(pend.length), 'Movimientos de ' + mesTexto(filtrosFact.mes)),
+          stat('Monto pendiente capturado', dinero(monto(pend)) || '$0.00', 'MXN · no incluye montos faltantes'),
+          stat('Datos por completar', String(porCompletar), porCompletar ? 'Requieren revisión del planeador' : 'Sin faltantes'),
+          stat('Facturadas', String(b.length - pend.length), 'Movimientos de ' + mesTexto(filtrosFact.mes))));
+        var todos = h('input', { type: 'checkbox', 'aria-label': 'Seleccionar todos los proveedores visibles', checked: grp.length > 0 && grp.every(function (g) { return seleccionFact[g.proveedor]; }) });
+        todos.addEventListener('change', function () { seleccionFact = {}; if (todos.checked) grp.forEach(function (g) { seleccionFact[g.proveedor] = true; }); pintar(); });
+        var marcar = null;
+        if (sel.length && filtrosFact.ver !== 'todas') {
+          var aFacturar = filtrosFact.ver === 'pendientes';
+          marcar = h('button', { class: 'btn', type: 'button' }, aFacturar ? 'Marcar como facturadas' : 'Quitar marca de facturadas');
+          marcar.addEventListener('click', function () {
             U.ocupado(marcar, true, 'Guardando…');
-            run('adminMarcarFacturadas', (pendientes.length ? pendientes : g.items).map(function (s) { return s.folio; }), pendientes.length > 0)
-              .then(function (d) { datos = d; U.toast(pendientes.length ? 'Marcadas como facturadas.' : 'Marca quitada.'); pintar(); })
+            run('adminMarcarFacturadas', selItems.map(function (s) { return s.folio; }), aFacturar)
+              .then(function (d) { datos = d; seleccionFact = {}; U.toast(aFacturar ? 'Marcadas como facturadas.' : 'Marca quitada.'); pintar(); })
               .catch(function (e) { U.ocupado(marcar, false); fallo(e); });
           });
-          return h('section', { class: 'tarjeta fact-grupo' },
-            h('div', { class: 'cabecera' }, h('div', null, h('h2', { style: 'margin:0' }, g.proveedor),
-              h('p', { class: 'gris chico', style: 'margin:4px 0 0' }, g.items.length + (g.items.length === 1 ? ' entrega' : ' entregas') + ' · total ' + (dinero(total) || '$0.00'))),
-              h('div', { class: 'acciones' }, bajar, marcar)),
-            faltan ? h('div', { class: 'aviso aviso-alerta', style: 'margin:12px 0 0' }, h('p', null, faltan + (faltan === 1 ? ' entrega no tiene' : ' entregas no tienen') + ' monto o consecutivo. Pide al planeador que los capture antes de facturar.')) : null,
-            sinConcepto ? h('div', { class: 'aviso aviso-alerta', style: 'margin:12px 0 0' }, h('p', null, sinConcepto + (sinConcepto === 1 ? ' entrega no dice' : ' entregas no dicen') + ' si es flete, maniobras o paquetería; se descarga en la carpeta «Sin definir».')) : null,
-            fueraDeTabla ? h('div', { class: 'aviso aviso-alerta', style: 'margin:12px 0 0' }, h('p', null, 'Este proveedor no está escrito igual que en la tabla de transportistas de la plantilla: en el formato, el IVA y las retenciones saldrán en $0. Corrígelo en la solicitud eligiéndolo de la lista.')) : null,
-            h('div', { class: 'tabla-caja', style: 'margin-top:12px' }, h('table', { class: 'tabla-fact' },
-              h('thead', null, h('tr', null, COLS_FACT.map(function (c) { return h('th', null, c[0]); }).concat([h('th', null, 'CONCEPTO'), h('th', null, 'ESTATUS'), h('th', null, 'FACTURADA'), h('th', null, 'FORMATO')]))),
-              h('tbody', null, g.items.map(function (s) {
-                var tr = h('tr', { tabindex: '0' }, COLS_FACT.map(function (c) {
-                  var v = c[3](s);
-                  return h('td', { class: c[1] === 'moneda' ? 'celda-monto' : c[1] === 'izq' ? '' : 'centro' }, c[1] === 'moneda' ? dinero(v) : c[1] === 'fecha' ? diaCorto(v) : v);
-                }).concat([h('td', { class: 'centro' }, s.concepto ? h('span', { class: 'pill ' + ({ Flete: 'e-recibida', Maniobras: 'e-en_revision', 'Paquetería': 'e-programada' }[s.concepto] || 'e-informacion') }, s.concepto) : h('span', { class: 'gris' }, 'Sin definir')),
-                  h('td', { class: 'centro' }, U.estado(cfg, s.estado)),
-                  h('td', { class: 'centro', style: 'white-space:nowrap' }, s.facturada ? U.dia(s.facturada) : h('span', { class: 'gris' }, 'Pendiente'),
-                  s.folio !== s.folio_cstext ? h('div', { class: 'sub' }, s.folio) : null),
-                  h('td', { class: 'centro' }, (function () {
-                    var b = h('button', { class: 'btn btn-chico', type: 'button', 'aria-label': 'Descargar formato ' + (s.folio_cstext || s.folio) }, '⬇');
-                    b.addEventListener('click', function (ev) { ev.stopPropagation(); descargarFormatos([{ proveedor: g.proveedor, items: [s] }], 'Formato.zip', b); });
-                    return b;
-                  })())]));
-                tr.addEventListener('click', function () { detalle(s.folio); });
-                return tr;
-              })))));
+        }
+        var bajar = h('button', { class: 'btn btn-pri', type: 'button', disabled: !selItems.length, onclick: abrirDialogo }, 'Descargar selección' + (selItems.length ? ' (' + selItems.length + ')' : '') + ' ↓');
+        var tabs = h('div', { class: 'fact-tabs', role: 'tablist', 'aria-label': 'Estado de facturación' }, [['pendientes', 'Pendientes'], ['facturadas', 'Facturadas'], ['todas', 'Todas']].map(function (t) {
+          return h('button', { type: 'button', role: 'tab', 'aria-selected': String(filtrosFact.ver === t[0]), onclick: function () { filtrosFact.ver = t[0]; seleccionFact = {}; abiertoFact = ''; pintar(); } }, t[1]);
         }));
+        var proveedores = base().map(proveedorDe).concat(filtrosFact.proveedor ? [filtrosFact.proveedor] : []).filter(function (p, i, a) { return a.indexOf(p) === i; }).sort();
+        var provSel = lista([['', 'Todos los proveedores']].concat(proveedores.map(function (p) { return [p, p]; })), filtrosFact.proveedor);
+        provSel.addEventListener('change', function () { filtrosFact.proveedor = provSel.value; seleccionFact = {}; abiertoFact = ''; pintar(); });
+        var mes = h('input', { class: 'entrada', type: 'month', value: filtrosFact.mes });
+        mes.addEventListener('change', function () { filtrosFact.mes = mes.value; seleccionFact = {}; abiertoFact = ''; pintar(); });
+        mount(trabajo,
+          h('div', { class: 'fact-tools' }, tabs, h('span', { class: 'gris chico' }, todas.length + (todas.length === 1 ? ' movimiento' : ' movimientos') + ' · ' + grp.length + (grp.length === 1 ? ' proveedor' : ' proveedores'))),
+          h('div', { class: 'fact-filter' }, campo('Mes de carga', mes), campo('Proveedor', provSel)),
+          h('div', { class: 'fact-table' }, h('table', null,
+            h('thead', null, h('tr', null, h('th', null, todos), h('th', null, 'Proveedor'), h('th', null, 'Movimientos'), h('th', { class: 'right' }, 'Monto capturado'), h('th', null, 'Documentación'), h('th'))),
+            h('tbody', null, grp.length ? grp.map(function (g) {
+              var falta = g.items.filter(function (s) { return faltantes(s).length; }).length, abierto = abiertoFact === g.proveedor;
+              var chk = h('input', { type: 'checkbox', 'aria-label': 'Seleccionar ' + g.proveedor, checked: !!seleccionFact[g.proveedor] });
+              chk.addEventListener('change', function () { if (chk.checked) seleccionFact[g.proveedor] = true; else delete seleccionFact[g.proveedor]; pintar(); });
+              var conceptos = g.items.map(function (s) { return s.concepto || 'Sin concepto'; }).filter(function (c, i, a) { return a.indexOf(c) === i; });
+              return [h('tr', { class: 'sin-clic fact-grupo' }, h('td', null, chk),
+                h('td', { class: 'supplier' }, g.proveedor, h('div', { class: 'sub' }, conceptos.join(' · '))),
+                h('td', null, String(g.items.length)),
+                h('td', { class: 'right' }, h('b', null, dinero(monto(g.items)) || '$0.00')),
+                h('td', null, h('span', { class: 'pill ' + (falta ? 'e-en_revision' : 'e-completada') }, falta ? falta + ' por completar' : 'Lista para preparar')),
+                h('td', null, h('button', { class: 'fact-link', type: 'button', 'aria-expanded': String(abierto), onclick: function () { abiertoFact = abierto ? '' : g.proveedor; pintar(); } },
+                  abierto ? 'Ocultar detalle ↑' : 'Ver detalle →'))),
+                abierto ? detalleProveedor(g) : null];
+            }) : h('tr', { class: 'sin-clic' }, h('td', { colspan: '6', class: 'fact-empty' }, 'No hay entregas completadas con estos filtros.'))))),
+          h('div', { class: 'fact-selectbar' },
+            h('span', null, sel.length ? [h('b', null, sel.length + (sel.length === 1 ? ' proveedor seleccionado' : ' proveedores seleccionados')), ' · ' + selItems.length + (selItems.length === 1 ? ' movimiento' : ' movimientos') + ' · ' + (dinero(monto(selItems)) || '$0.00')]
+              : 'Selecciona uno o varios proveedores para preparar sus documentos.'),
+            h('div', { class: 'acciones' }, marcar, bajar)));
       }
-      var estatus = lista(ESTATUS_FACT, filtrosFact.estatus);
-      var mes = h('input', { class: 'entrada', type: 'month', value: filtrosFact.mes, 'aria-label': 'Mes de carga' });
-      var ver = lista([['pendientes', 'Pendientes de facturar'], ['facturadas', 'Ya facturadas'], ['todas', 'Todas']], filtrosFact.ver);
-      [[estatus, 'estatus'], [mes, 'mes'], [ver, 'ver']].forEach(function (x) { x[0].addEventListener('change', function () { filtrosFact[x[1]] = x[0].value; pintar(); }); });
-      var cabeceraMes = h('div', { style: 'margin:-4px 0 14px' });
-      var sinPlantilla = datos.plantilla ? null : h('div', { class: 'aviso aviso-alerta', role: 'alert' }, h('p', null, h('b', null, 'Falta subir tu plantilla de movimientos. '),
-        'Mientras no se suba, se descarga la tabla simple por proveedor y no el formato PLANTILLA_MOVIMIENTOS_EXT. ' +
+      var sinPlantilla = datos.plantilla ? null : h('div', { class: 'aviso aviso-alerta', role: 'alert', style: 'margin:0' }, h('p', null, h('b', null, 'Falta subir tu plantilla de movimientos. '),
+        'Mientras no se suba, solo se puede descargar el resumen consolidado. ' +
         (esAdmin ? 'Súbela en Configuración › Plantilla de movimientos.' : 'Pide al administrador que la suba en Configuración.')),
         esAdmin ? h('button', { class: 'btn btn-pri btn-chico', type: 'button', onclick: function () { configuracion(); } }, 'Ir a subir la plantilla') : null);
-      mount(main,
-        encabezado('Facturación', 'Elige el estatus y el mes. Cada movimiento sale en su formato, por proveedor. «Descargar todas» baja un ZIP con carpetas para fletes, maniobras y paquetería.', [
-          h('button', { class: 'btn btn-pri btn-chico', type: 'button', onclick: descargarTodas }, '⬇ Descargar todas (ZIP)'),
-          esAdmin ? h('button', { class: 'btn btn-osc btn-chico', type: 'button', onclick: descargarMes }, '⬇ Excel del mes (una hoja por proveedor)') : null,
-          h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { cargar().then(facturacion); } }, 'Actualizar')]),
-        h('div', { class: 'filtros filtros-fact' }, campo('Estatus', estatus), campo('Mes de carga', mes), campo('Ver', ver)),
-        cabeceraMes, sinPlantilla,
-        cont);
+      mount(main, h('div', { class: 'fact-layout' },
+        h('div', { class: 'gastos-head', style: 'margin:0' }, h('div', null, h('h1', null, 'Facturación'), h('p', null, 'Revisa los movimientos completados y prepara la documentación por proveedor.')),
+          h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { cargar().then(facturacion); } }, 'Actualizar')),
+        sinPlantilla, resumenCaja, trabajo,
+        h('p', { class: 'fact-note' }, 'La plantilla se llena con fecha de carga, Estados de origen y destino, folio, transportista, concepto, subtotal y observaciones. Los totales de arriba corresponden al mes y proveedor elegidos; la pestaña filtra la tabla. Descargar no marca los movimientos como facturados.'),
+        dialogo));
       pintar();
     }
 
-    /* ---------------------------------------------------------------- gastos por departamento */
-    var filtrosGastos = { mes: '', concepto: '' };
+    /* ---------------------------------------------------------------- dashboard de gastos */
+    /* Colores por concepto (validados para daltonismo); siempre van con su nombre y monto escritos. */
+    var COLOR_CONCEPTO = { Flete: '#D77129', Maniobras: '#3A6EA5', 'Paquetería': '#7A9A3A' };
+    var filtrosGastos = { periodo: 'todo', area: '', concepto: '' };
     function gastos() {
       nav('gastos');
       if (!datos) { mount(main, h('p', { class: 'gris' }, 'Cargando…')); return; }
       var fecha = function (s) { return s.fecha_programada || String(s.creada || '').slice(0, 10); };
+      var vivas = datos.solicitudes.filter(function (s) { return ['cancelada', 'rechazada'].indexOf(s.estado) < 0 && fecha(s); });
+      var mesesData = vivas.map(function (s) { return fecha(s).slice(0, 7); }).filter(function (m, i, a) { return a.indexOf(m) === i; }).sort();
+      var anio = String(cfg.hoy || '').slice(0, 4);
+      var mesCorto = function (m) { return MESES[Number(m.slice(5, 7)) - 1].replace(/^./, function (x) { return x.toUpperCase(); }) + (m.slice(0, 4) !== anio ? ' ' + m.slice(2, 4) : ''); };
       var cuerpo = h('div');
+      function enPeriodo(m) {
+        return filtrosGastos.periodo === 'todo' || (filtrosGastos.periodo === 'anio' ? m.slice(0, 4) === anio : m === filtrosGastos.periodo);
+      }
+      function periodoTexto() {
+        if (filtrosGastos.periodo === 'anio') return 'Año ' + anio;
+        if (filtrosGastos.periodo !== 'todo') return mesTexto(filtrosGastos.periodo);
+        return mesesData.length ? 'Todo: ' + mesTexto(mesesData[0]) + (mesesData.length > 1 ? ' – ' + mesTexto(mesesData[mesesData.length - 1]) : '') : 'Todo';
+      }
       function calcular() {
-        var vivas = datos.solicitudes.filter(function (s) {
-          return ['cancelada', 'rechazada'].indexOf(s.estado) < 0 && (!filtrosGastos.mes || fecha(s).slice(0, 7) === filtrosGastos.mes) &&
-            (!filtrosGastos.concepto || s.concepto === filtrosGastos.concepto);
+        var base = vivas.filter(function (s) {
+          return enPeriodo(fecha(s).slice(0, 7)) && (!filtrosGastos.concepto || s.concepto === filtrosGastos.concepto);
         });
-        var conMonto = vivas.filter(function (s) { return s.monto !== ''; }), mapa = {};
-        conMonto.forEach(function (s) {
+        var sel = base.filter(function (s) { return !filtrosGastos.area || (s.area || 'Sin departamento') === filtrosGastos.area; });
+        var conMonto = sel.filter(function (s) { return s.monto !== ''; });
+        var suma = function (lista) { return lista.reduce(function (t, s) { return t + (Number(s.monto) || 0); }, 0); };
+        var mapa = {};
+        /* Departamentos: sobre el periodo y concepto (sin el filtro de departamento), para poder elegir otro. */
+        base.filter(function (s) { return s.monto !== ''; }).forEach(function (s) {
           var k = s.area || 'Sin departamento', m = Number(s.monto) || 0;
-          var d = mapa[k] = mapa[k] || { area: k, total: 0, n: 0, flete: 0, maniobras: 0, paqueteria: 0 };
-          d.total += m; d.n += 1;
-          if (s.concepto === 'Flete') d.flete += m; else if (s.concepto === 'Maniobras') d.maniobras += m; else if (s.concepto === 'Paquetería') d.paqueteria += m;
+          var d = mapa[k] = mapa[k] || { area: k, total: 0, n: 0, Flete: 0, Maniobras: 0, 'Paquetería': 0 };
+          d.total += m; d.n += 1; if (d[s.concepto] !== undefined) d[s.concepto] += m;
         });
-        return { filas: Object.keys(mapa).map(function (k) { return mapa[k]; }).sort(function (a, b) { return b.total - a.total || a.area.localeCompare(b.area); }),
-          total: conMonto.reduce(function (t, s) { return t + (Number(s.monto) || 0); }, 0), n: conMonto.length, sinMonto: vivas.length - conMonto.length };
+        var areas = Object.keys(mapa).map(function (k) { return mapa[k]; }).sort(function (a, b) { return b.total - a.total || a.area.localeCompare(b.area); });
+        var meses = mesesData.filter(enPeriodo).slice(-12).map(function (m) {
+          return { mes: m, total: suma(conMonto.filter(function (s) { return fecha(s).slice(0, 7) === m; })) };
+        });
+        var mix = datos.conceptos.map(function (c) { return { concepto: c, total: suma(conMonto.filter(function (s) { return s.concepto === c; })) }; });
+        var sinConcepto = suma(conMonto.filter(function (s) { return datos.conceptos.indexOf(s.concepto) < 0; }));
+        return { total: suma(conMonto), n: conMonto.length, sinMonto: sel.length - conMonto.length, areas: areas, meses: meses, mix: mix, sinConcepto: sinConcepto,
+          detalle: areas.filter(function (d) { return !filtrosGastos.area || d.area === filtrosGastos.area; }) };
       }
+      var pct = function (x, t) { return t ? (x / t * 100).toFixed(1) + '%' : '0%'; };
       function pintar() {
-        var r = calcular(), max = r.filas.length ? r.filas[0].total : 0;
-        var tile = function (titulo, valor, nota) { return h('div', { class: 'tile' }, h('span', null, titulo), h('b', null, valor), nota ? h('small', null, nota) : null); };
-        var tooltip = h('div', { class: 'tooltip', role: 'status', hidden: true });
-        var grafica = h('div', { class: 'gbarras', role: 'list', 'aria-label': 'Gasto por departamento' }, r.filas.map(function (d) {
-          var detalle = d.area + ': ' + dinero(d.total) + ' · ' + d.n + (d.n === 1 ? ' servicio' : ' servicios') +
-            (d.flete ? ' · fletes ' + dinero(d.flete) : '') + (d.maniobras ? ' · maniobras ' + dinero(d.maniobras) : '') + (d.paqueteria ? ' · paquetería ' + dinero(d.paqueteria) : '');
-          var fila = h('div', { class: 'gbar-fila', role: 'listitem', tabindex: '0', 'aria-label': detalle },
-            h('span', { class: 'gbar-nombre' }, d.area),
-            h('span', { class: 'gbar-pista' }, h('span', { class: 'gbar-marca', style: 'width:calc((100% - 170px) * ' + Math.max(0.01, max ? d.total / max : 0).toFixed(4) + ')' }),
-              h('span', { class: 'gbar-valor' }, dinero(d.total), h('span', { class: 'gris' }, ' · ' + d.n))));
-          var ver = function (ev) {
-            tooltip.textContent = detalle; tooltip.hidden = false;
-            var caja = grafica.getBoundingClientRect(), y = fila.getBoundingClientRect();
-            tooltip.style.top = (y.top - caja.top - 34) + 'px';
-            tooltip.style.left = Math.min(Math.max(0, (ev && ev.clientX ? ev.clientX - caja.left : 120) - 40), caja.width - 260) + 'px';
-          };
-          fila.addEventListener('mousemove', ver); fila.addEventListener('focus', ver);
-          fila.addEventListener('mouseleave', function () { tooltip.hidden = true; }); fila.addEventListener('blur', function () { tooltip.hidden = true; });
-          return fila;
-        }));
+        var r = calcular();
+        var top = r.detalle[0];
+        var kpi = function (titulo, valor, nota) { return h('div', { class: 'gastos-kpi' }, h('span', { class: 'k-label' }, titulo), h('strong', null, valor), nota ? h('small', null, nota) : null); };
+        var maxMes = Math.max.apply(null, [1].concat(r.meses.map(function (m) { return m.total; })));
+        var maxArea = r.areas.length ? r.areas[0].total : 0;
+        var totalAreas = r.areas.reduce(function (t, d) { return t + d.total; }, 0);
+        var conMix = r.mix.filter(function (m) { return m.total > 0; });
+        var vacio = !r.n;
         mount(cuerpo,
-          h('div', { class: 'tiles' },
-            tile('Total gastado', dinero(r.total) || '$0.00', mesTexto(filtrosGastos.mes)),
-            tile('Servicios con monto', String(r.n), r.sinMonto ? r.sinMonto + ' sin monto todavía' : null),
-            tile('Promedio por servicio', r.n ? dinero(r.total / r.n) : '—'),
-            tile('Departamento con más gasto', r.filas.length ? r.filas[0].area : '—', r.filas.length ? dinero(r.filas[0].total) : null)),
-          r.filas.length ? h('section', { class: 'tarjeta' }, h('h2', null, 'Gasto por departamento'),
-            h('p', { class: 'gris chico' }, 'Suma de los montos que capturó el planeador. Pasa el mouse sobre una barra para ver fletes, maniobras y paquetería.'),
-            h('div', { class: 'grafica' }, grafica, tooltip))
-            : h('div', { class: 'tarjeta', style: 'text-align:center' }, h('p', { class: 'gris', style: 'margin:0' }, 'Todavía no hay montos capturados con estos filtros.')),
-          r.filas.length ? h('section', { class: 'tarjeta' }, h('h2', null, 'Detalle'),
-            h('div', { class: 'tabla-caja' }, h('table', { class: 'tabla-gastos' },
-              h('thead', null, h('tr', null, ['Departamento', 'Servicios', 'Fletes', 'Maniobras', 'Paquetería', 'Total'].map(function (t, i) { return h('th', { class: i ? 'celda-monto' : null }, t); }))),
-              h('tbody', null, r.filas.map(function (d) {
-                return h('tr', { class: 'sin-clic' }, h('td', null, d.area), h('td', { class: 'celda-monto' }, String(d.n)), h('td', { class: 'celda-monto' }, d.flete ? dinero(d.flete) : '—'),
-                  h('td', { class: 'celda-monto' }, d.maniobras ? dinero(d.maniobras) : '—'),
-                  h('td', { class: 'celda-monto' }, d.paqueteria ? dinero(d.paqueteria) : '—'), h('td', { class: 'celda-monto' }, h('b', null, dinero(d.total))));
-              }).concat([h('tr', { class: 'sin-clic total' }, h('td', null, h('b', null, 'Total')), h('td', { class: 'celda-monto' }, String(r.n)),
-                h('td', { class: 'celda-monto' }, dinero(r.filas.reduce(function (t, d) { return t + d.flete; }, 0)) || '—'),
-                h('td', { class: 'celda-monto' }, dinero(r.filas.reduce(function (t, d) { return t + d.maniobras; }, 0)) || '—'),
-                h('td', { class: 'celda-monto' }, dinero(r.filas.reduce(function (t, d) { return t + d.paqueteria; }, 0)) || '—'),
-                h('td', { class: 'celda-monto' }, h('b', null, dinero(r.total))))]))))) : null);
+          h('p', { class: 'filter-summary' }, [periodoTexto(), filtrosGastos.area || 'Todos los departamentos', filtrosGastos.concepto || 'Todos los conceptos', 'MXN'].join(' · ')),
+          h('div', { class: 'gastos-kpis' },
+            kpi('Gasto total', dinero(r.total) || '$0.00', 'Montos del periodo seleccionado'),
+            kpi('Servicios con monto', String(r.n), r.sinMonto ? r.sinMonto + ' sin monto todavía' : 'Incluidos en los filtros'),
+            kpi('Promedio por servicio', r.n ? dinero(r.total / r.n) : '—', 'Gasto total ÷ servicios con monto'),
+            kpi('Departamento con más gasto', top ? top.area : '—', top ? dinero(top.total) + ' · ' + pct(top.total, totalAreas) + ' del total' : null)),
+          vacio ? h('div', { class: 'gastos-card', style: 'text-align:center;margin-bottom:24px' }, h('p', { class: 'gris', style: 'margin:0' }, 'Todavía no hay montos capturados con estos filtros.')) : [
+            h('div', { class: 'gastos-grid' },
+              h('section', { class: 'gastos-card' }, h('h2', null, 'Evolución del gasto'), h('p', { class: 'chart-note' }, 'Total mensual en MXN · barras desde cero'),
+                h('div', { class: 'month-chart', role: 'list', 'aria-label': 'Gasto por mes' }, r.meses.map(function (m) {
+                  var texto = mesTexto(m.mes) + ': ' + (dinero(m.total) || '$0.00');
+                  return h('div', { class: 'month-col', role: 'listitem', tabindex: '0', title: texto, 'aria-label': texto },
+                    h('span', { class: 'month-value' }, dinero(m.total).replace(/\.00$/, '') || '$0'),
+                    h('span', { class: 'month-bar', style: 'height:' + Math.max(1, Math.round(m.total / maxMes * 190)) + 'px' }),
+                    h('span', { class: 'month-label' }, mesCorto(m.mes)));
+                }))),
+              h('section', { class: 'gastos-card' }, h('h2', null, 'Gasto por departamento'), h('p', { class: 'chart-note' }, 'Participación del total · da clic en un departamento para filtrar'),
+                h('div', null, r.areas.map(function (d) {
+                  var activo = filtrosGastos.area === d.area;
+                  return h('button', { type: 'button', class: 'dept-row', 'aria-pressed': String(activo),
+                    onclick: function () { filtrosGastos.area = activo ? '' : d.area; areaSel.value = filtrosGastos.area; pintar(); } },
+                    h('span', { class: 'dept-line' }, h('b', null, d.area), h('span', null, dinero(d.total))),
+                    h('span', { class: 'dept-track' }, h('span', { class: 'dept-fill', style: 'width:' + Math.max(1, maxArea ? d.total / maxArea * 100 : 0).toFixed(1) + '%;background:' + (filtrosGastos.area && !activo ? '#C9D1D8' : '#D77129') })),
+                    h('span', { class: 'dept-percent' }, pct(d.total, totalAreas) + ' del gasto · ' + d.n + (d.n === 1 ? ' servicio' : ' servicios')));
+                })))),
+            h('div', { class: 'gastos-bottom' },
+              h('section', { class: 'gastos-card' }, h('h2', null, 'Distribución por concepto'), h('p', { class: 'chart-note' }, 'Participación del gasto seleccionado'),
+                h('div', { class: 'mix-bar', 'aria-hidden': 'true', style: 'gap:2px' }, conMix.map(function (m) {
+                  return h('span', { style: 'flex:' + m.total + ';background:' + COLOR_CONCEPTO[m.concepto] });
+                })),
+                h('div', { class: 'mix-list' }, r.mix.map(function (m) {
+                  return h('div', { class: 'mix-line' }, h('span', { class: 'mix-dot', style: 'background:' + COLOR_CONCEPTO[m.concepto] }),
+                    h('span', null, m.concepto, h('small', null, pct(m.total, r.total) + ' del total')), h('b', null, dinero(m.total) || '$0.00'));
+                }), r.sinConcepto ? h('div', { class: 'mix-line' }, h('span'), h('span', null, 'Sin concepto', h('small', null, 'El planeador aún no indica si es flete, maniobras o paquetería')),
+                  h('b', null, dinero(r.sinConcepto))) : null)),
+              h('section', { class: 'gastos-card' }, h('h2', null, 'Detalle por departamento'), h('p', { class: 'chart-note' }, 'Desglose de los montos · MXN'),
+                h('div', { class: 'tabla-caja' }, h('table', { class: 'gastos-table' },
+                  h('thead', null, h('tr', null, ['Departamento', 'Servicios'].concat(datos.conceptos, ['Total']).map(function (t, i) { return h('th', { class: i ? 'numero' : null }, t === 'Flete' ? 'Fletes' : t); }))),
+                  h('tbody', null, r.detalle.map(function (d) {
+                    return h('tr', { class: 'sin-clic' }, h('td', null, d.area), h('td', { class: 'numero' }, String(d.n)),
+                      datos.conceptos.map(function (c) { return h('td', { class: 'numero' }, d[c] ? dinero(d[c]) : '—'); }),
+                      h('td', { class: 'numero' }, h('b', null, dinero(d.total))));
+                  })),
+                  h('tfoot', null, h('tr', { class: 'sin-clic' }, h('td', null, 'Total'),
+                    h('td', { class: 'numero' }, String(r.detalle.reduce(function (t, d) { return t + d.n; }, 0))),
+                    datos.conceptos.map(function (c) { var x = r.detalle.reduce(function (t, d) { return t + d[c]; }, 0); return h('td', { class: 'numero' }, x ? dinero(x) : '—'); }),
+                    h('td', { class: 'numero' }, dinero(r.detalle.reduce(function (t, d) { return t + d.total; }, 0)) || '$0.00')))))))],
+          h('p', { class: 'gastos-foot' }, 'Suma de los montos que captura el planeador (fecha de carga o, si no tiene, la de la solicitud). No incluye solicitudes canceladas ni rechazadas.'));
       }
-      var mes = h('input', { class: 'entrada', type: 'month', value: filtrosGastos.mes });
-      var concepto = lista([['', 'Todos']].concat(datos.conceptos.map(function (c) { return [c, 'Solo ' + ({ Flete: 'fletes', Maniobras: 'maniobras' }[c] || c.toLowerCase())]; })), filtrosGastos.concepto);
-      [[mes, 'mes'], [concepto, 'concepto']].forEach(function (x) { x[0].addEventListener('change', function () { filtrosGastos[x[1]] = x[0].value; pintar(); }); });
+      var periodoSel = lista([['todo', 'Todo el historial'], ['anio', 'Año ' + anio]].concat(mesesData.slice().reverse().map(function (m) {
+        return [m, mesTexto(m).replace(/^./, function (x) { return x.toUpperCase(); })];
+      })), filtrosGastos.periodo);
+      var areaSel = lista([['', 'Todos los departamentos']].concat(departamentos().map(function (a) { return [a, a]; })), filtrosGastos.area);
+      var conceptoSel = lista([['', 'Todos los conceptos']].concat(datos.conceptos.map(function (c) { return [c, c]; })), filtrosGastos.concepto);
+      periodoSel.id = 'g-periodo'; areaSel.id = 'g-area'; conceptoSel.id = 'g-concepto';
+      [[periodoSel, 'periodo'], [areaSel, 'area'], [conceptoSel, 'concepto']].forEach(function (x) { x[0].addEventListener('change', function () { filtrosGastos[x[1]] = x[0].value; pintar(); }); });
+      var restablecer = h('button', { class: 'btn', type: 'button', onclick: function () {
+        filtrosGastos = { periodo: 'todo', area: '', concepto: '' }; periodoSel.value = 'todo'; areaSel.value = ''; conceptoSel.value = ''; pintar();
+      } }, 'Restablecer');
       mount(main,
-        encabezado('Gastos', 'Cuánto ha gastado cada departamento que ha pedido servicios. Elige un mes o déjalo vacío para ver todo.',
-          [h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { cargar().then(gastos); } }, 'Actualizar')]),
-        h('div', { class: 'filtros filtros-fact' }, campo('Mes', mes), campo('Concepto', concepto)),
+        h('div', { class: 'gastos-head' }, h('div', null, h('h1', null, 'Dashboard'), h('p', null, 'Control de gastos por departamento y concepto.')),
+          h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { cargar().then(gastos); } }, 'Actualizar')),
+        h('div', { class: 'gastos-filtros' }, campo('Periodo', periodoSel), campo('Departamento', areaSel), campo('Concepto', conceptoSel), restablecer),
         cuerpo);
       pintar();
     }
