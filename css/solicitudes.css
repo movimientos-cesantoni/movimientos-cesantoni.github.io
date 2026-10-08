@@ -508,3 +508,26 @@ body.menu-abierto { overflow:hidden; }
 .dept-row:focus-visible, .month-col:focus-visible { outline:2px solid var(--naranja); outline-offset:2px; }
 .month-col { position:relative; }
 .portada-sola { grid-template-columns:minmax(0,1fr); max-width:860px; }
+
+/* Portada centrada: una sola tarjeta, los cuatro pasos en mosaico y el botón al centro. */
+.portada-sola { max-width:880px; margin:16px auto 0; }
+.portada-sola > .tarjeta { text-align:center; padding:52px 48px 40px; }
+.portada-sola h1 { font-size:clamp(28px,3vw,40px); margin-bottom:14px; }
+.portada-sola > .tarjeta > .gris:not(.chico) { max-width:640px; margin:0 auto; font-size:16px; line-height:1.75; }
+.portada-sola .lista-tipos { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin:34px 0 32px; text-align:left; }
+.portada-sola .lista-tipos li { display:flex; gap:14px; align-items:flex-start; padding:18px 20px; border:1px solid var(--linea); border-radius:12px; background:var(--fondo); }
+.portada-sola .lista-tipos li:last-child { border-bottom:1px solid var(--linea); }
+.portada-sola .lista-tipos .gris { display:block; font-size:13.5px; line-height:1.55; margin-top:2px; }
+.tipo-icono { flex:none; width:42px; height:42px; display:grid; place-items:center; border-radius:50%; background:var(--naranja-claro); font-size:20px; }
+.btn-grande { min-height:54px; padding:14px 36px; font-size:16px; border-radius:10px; }
+.portada-sola .chico { margin-top:18px !important; }
+.centrado { max-width:560px; margin:16px auto 0; }
+.centrado > h1, .centrado > .ayuda-pantalla { text-align:center; margin-left:auto; margin-right:auto; }
+.centrado > .ayuda-pantalla { margin-bottom:22px; }
+.centrado .tarjeta { padding:32px; }
+@media (max-width:760px) {
+  .portada-sola > .tarjeta { padding:32px 20px 26px; }
+  .portada-sola .lista-tipos { grid-template-columns:minmax(0,1fr); }
+  .btn-grande { width:100%; }
+  .centrado .tarjeta { padding:22px; }
+}
