@@ -1,7 +1,7 @@
 /* Panel de Logística (Liga 2): base de solicitudes. Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=27';
-import { libroXlsx, zipArchivos } from './xlsx.js?v=27';
-import { analizarPlantilla, crearGenerador, fechaLarga, aBase64, deBase64 } from './plantilla.js?v=27';
+import * as API from './servidor.js?v=29';
+import { libroXlsx, zipArchivos } from './xlsx.js?v=29';
+import { analizarPlantilla, crearGenerador, fechaLarga, aBase64, deBase64 } from './plantilla.js?v=29';
 window.API = API;
 (function () {
     'use strict';
@@ -189,30 +189,26 @@ window.API = API;
       function pintar() {
         var items = filtradas();
         if (!items.length) { mount(tabla, h('div', { class: 'tarjeta', style: 'text-align:center' }, h('p', { class: 'gris', style: 'margin:0' }, 'No hay solicitudes con estos filtros.'))); return; }
-        mount(tabla, h('p', { class: 'gris chico' }, items.length + (items.length === 1 ? ' solicitud' : ' solicitudes')),
-          h('div', { class: 'tabla-caja' }, h('table', null,
-            h('thead', null, h('tr', null, ['Folio', 'Estado', 'Producto y movimiento', 'Solicita', 'Ruta', 'Fechas', 'Responsable', 'Transportista'].map(function (t) { return h('th', null, t); }))),
+        /* Una fila limpia: una sola etiqueta de estatus y las alertas como texto corto con punto de color. */
+        var marca = function (tono, texto) { return h('span', { class: 'marca marca-' + tono }, texto); };
+        mount(tabla, h('div', { class: 'tabla-cabeza' }, h('span', null, h('b', null, String(items.length)), items.length === 1 ? ' solicitud' : ' solicitudes')),
+          h('div', { class: 'tabla-caja tabla-sol' }, h('table', null,
+            h('thead', null, h('tr', null, ['Folio', 'Estatus', 'Solicitud', 'Solicitante', 'Ruta', 'Fecha', 'Responsable'].map(function (t) { return h('th', null, t); }))),
             h('tbody', null, items.map(function (s) {
+              var alertas = [s.prioridad === 'Urgente' ? marca('rojo', 'Urgente') : null,
+                s.aut_estado ? marca(s.aut_estado === 'Autorizado' ? 'verde' : s.aut_estado === 'Rechazado' ? 'rojo' : 'ambar',
+                  s.aut_estado === 'Pendiente de autorización' ? 'Por autorizar' : 'Costo ' + s.aut_estado.toLowerCase()) : null,
+                s.tipo === 'devolucion' && s.dev_cumple !== 'Sí' ? marca('rojo', 'Devolución no cumple') : null,
+                s.cita === 'Sí' ? marca('azul', 'Requiere cita') : null].filter(Boolean);
+              var fecha = s.fecha_programada ? U.dia(s.fecha_programada) : s.fecha_abierta === 'Sí' ? 'Fecha abierta' : U.dia(s.fecha_requerida);
               var tr = h('tr', { tabindex: '0' },
-                h('td', { style: 'white-space:nowrap' }, h('b', null, s.folio), s.folio_cstext && s.folio_cstext !== s.folio ? h('div', { class: 'sub' }, s.folio_cstext) : null,
-                  h('div', { class: 'sub' }, U.dia(s.creada))),
-                h('td', null, U.estado(cfg, s.estado), s.prioridad === 'Urgente' ? h('div', { style: 'margin-top:4px' }, h('span', { class: 'pill urgente' }, 'Urgente')) : null,
-                  s.aut_estado ? h('div', { style: 'margin-top:4px' }, h('span', { class: 'pill ' + (s.aut_estado === 'Autorizado' ? 'e-completada' : s.aut_estado === 'Rechazado' ? 'e-rechazada' : 'e-en_revision') },
-                    s.aut_estado === 'Pendiente de autorización' ? 'Pendiente de autorización' : 'Costo: ' + s.aut_estado)) : null),
-                h('td', null, h('b', null, s.producto || '—'), h('div', { class: 'sub' }, s.tipo_nombre), s.tipo === 'devolucion' ? h('div', { style: 'margin-top:4px' },
-                  h('span', { class: 'pill ' + (s.dev_cumple === 'Sí' ? 'e-completada' : 'e-rechazada') }, s.dev_cumple === 'Sí' ? 'Cumple' : 'No cumple')) : null,
-                  s.forma_envio ? h('div', { class: 'sub' }, s.forma_envio + (s.paq_total ? ' · ' + s.paq_total + ' pzas' + (s.paq_peso_kg ? ' · ' + s.paq_peso_kg + ' kg' : '') : '')) : null,
-                  s.referencia ? h('div', { class: 'sub' }, 'Folio ' + s.referencia) : null,
-                  s.cita === 'Sí' ? h('div', { style: 'margin-top:4px' }, h('span', { class: 'pill e-informacion' }, 'Requiere cita')) : null),
+                h('td', { class: 'col-folio' }, h('b', null, s.folio), h('div', { class: 'sub' }, U.dia(s.creada))),
+                h('td', null, U.estado(cfg, s.estado), alertas.length ? h('div', { class: 'marcas' }, alertas) : null),
+                h('td', null, h('b', null, s.producto || '—'), h('div', { class: 'sub' }, [s.tipo_nombre, s.forma_envio].filter(Boolean).join(' · '))),
                 h('td', null, s.solicitante, h('div', { class: 'sub' }, s.area)),
                 h('td', { title: s.origen + ' → ' + s.destino }, corto(s.origen), h('div', { class: 'sub' }, '→ ' + corto(s.destino))),
-                h('td', { style: 'white-space:nowrap' },
-                  s.fecha_abierta === 'Sí' ? h('span', { class: 'pill e-informacion' }, 'Fecha abierta') : (U.dia(s.fecha_requerida) || h('span', { class: 'gris' }, '—')),
-                  s.recoleccion === 'Sí' ? h('div', { class: 'sub' }, 'Recolección: ' + (s.recoleccion_abierta === 'Sí' ? 'abierta' : U.dia(s.fecha_recoleccion))) : null,
-                  s.fecha_programada ? h('div', { class: 'sub' }, 'Programada: ' + U.dia(s.fecha_programada)) : null,
-                  s.categorizacion ? h('div', { class: 'sub' }, s.categorizacion) : null),
-                h('td', null, s.responsable ? nombreDe(s.responsable) : h('span', { class: 'gris' }, 'Sin asignar')),
-                h('td', null, s.transportista || h('span', { class: 'gris' }, '—'), s.guia ? h('div', { class: 'sub' }, s.guia) : null));
+                h('td', { class: 'col-fecha' }, fecha || '—', h('div', { class: 'sub' }, s.fecha_programada ? 'Fecha de carga' : 'Tentativa')),
+                h('td', null, s.responsable ? nombreDe(s.responsable) : h('span', { class: 'gris' }, 'Sin asignar'), s.transportista ? h('div', { class: 'sub' }, s.transportista) : null));
               tr.addEventListener('click', function () { detalle(s.folio); });
               tr.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') detalle(s.folio); });
               return tr;
@@ -285,15 +281,20 @@ window.API = API;
         }));
       };
 
-      var cabecera = h('section', { class: 'tarjeta' },
+      /* Ficha de la solicitud: folio, estatus, avance y los datos clave en una sola vista. */
+      var ficha = function (titulo, valor, nota) { return valor ? h('div', { class: 'ficha-dato' }, h('span', null, titulo), h('b', null, valor), nota ? h('small', null, nota) : null) : null; };
+      var cabecera = h('section', { class: 'tarjeta ficha' },
         h('div', { class: 'cabecera' },
-          h('div', null, h('div', { class: 'folio' }, s.folio), h('p', { class: 'gris chico', style: 'margin:6px 0 0' }, (s.producto ? s.producto + ' · ' : '') + s.tipo_nombre + ' · creada ' + U.dia(s.creada))),
+          h('div', null, h('p', { class: 'ficha-etq' }, 'Folio'), h('div', { class: 'folio' }, s.folio),
+            h('p', { class: 'gris', style: 'margin:6px 0 0' }, (s.producto ? s.producto + ' · ' : '') + s.tipo_nombre + ' · creada ' + U.dia(s.creada))),
           h('div', { class: 'acciones' }, s.folio_cstext && s.folio_cstext !== s.folio ? h('span', { class: 'pill e-programada' }, s.folio_cstext) : null,
             U.estado(cfg, s.estado), s.prioridad === 'Urgente' ? h('span', { class: 'pill urgente' }, 'Urgente') : null)),
         U.pasos(cfg, s.estado),
-        h('div', { style: 'height:12px' }),
-        info([['Solicita', s.solicitante + ' · ' + s.area], ['Correo', s.correo], ['Producto', s.producto], ['Movimiento', s.tipo_nombre],
-          ['Tipo de solicitud', s.prioridad], ['Tipo de servicio', s.forma_envio]].concat(U.fechas(s))));
+        h('div', { class: 'ficha-datos' },
+          ficha('Solicita', s.solicitante, s.area), ficha('Correo', s.correo), ficha('Tipo de servicio', s.forma_envio, s.prioridad),
+          ficha('Ruta', s.origen, '→ ' + s.destino), ficha('Fecha de carga', s.fecha_programada ? U.dia(s.fecha_programada) : 'Por programar', s.transportista || null),
+          ficha('Monto', s.monto ? dinero(s.monto) : 'Sin capturar', s.concepto || null)),
+        h('dl', { class: 'datos ficha-fechas' }, U.fechas(s).filter(function (d) { return d[1]; }).map(function (d) { return h('div', null, h('dt', null, d[0]), h('dd', null, d[1])); })));
 
       var ruta = h('section', { class: 'tarjeta' }, h('h2', null, 'Ruta y detalle'), info(U.detalle(s)));
 
@@ -339,25 +340,32 @@ window.API = API;
       var visible = h('input', { type: 'checkbox', checked: true });
       var avisar = h('input', { type: 'checkbox', checked: true });
       var guardar = h('button', { class: 'btn btn-pri', type: 'submit' }, 'Guardar cambios');
-      var form = h('form', { class: 'tarjeta', novalidate: true }, h('h2', null, 'Actualizar'),
-        h('div', { class: 'rejilla' },
-          campo('Estado', estado), campo('Responsable', resp),
-          campo('Folio CSTEXT', cstext), campo('Categorización', categ),
-          campo('Transportista', transp), campo('Unidad asignada', unidad),
-          campo('Guía o referencia', guia), campo('Fecha de carga', fprog),
-          campo('Monto ($)', monto), campo('¿Flete, maniobras o paquetería?', concepto), campo('Tipo de movimiento', tipoMov),
-          campo((nuevo ? 'Fecha tentativa de recolección' : 'Fecha requerida') + (s.fecha_abierta === 'Sí' ? ' (abierta: asígnala aquí)' : ''), freq),
-          fent ? campo('Fecha tentativa de entrega' + (s.fecha_abierta === 'Sí' ? ' (abierta: asígnala aquí)' : ''), fent) : null,
-          frec ? campo((nuevo ? 'Recolección posterior' : 'Fecha de recolección') + (s.recoleccion_abierta === 'Sí' ? ' (abierta: asígnala aquí)' : ''), frec) : null,
-          h('h3', { class: 'todo', style: 'margin:6px 0 0' }, 'Plantilla de facturación'),
-          campo('Estado de origen', oEst), campo('Estado de destino', dEst), campo('Cliente', cliFact), campo('Requiere factura de maniobra', maniobra), campo('CST', cstCampo),
-          campo('Notas internas (no las ve quien solicita)', notas, 'todo'),
-          campo('Mensaje', mensaje, 'todo'), catalogos),
-        h('p', { class: 'gris chico' }, 'El monto, la fecha de carga y los datos de la plantilla alimentan la vista de Facturación. El folio de la solicitud es su consecutivo CSTEXT.'),
-        h('div', { style: 'margin:10px 0 14px;display:grid;gap:6px' },
-          h('label', { class: 'chico' }, visible, ' El mensaje lo ve quien solicita (si no, queda como nota interna)'),
-          h('label', { class: 'chico' }, avisar, ' Avisar por correo a ' + s.correo)),
-        guardar);
+      /* Grupos estandarizados: cada uno con su número, título y una línea de para qué sirve. */
+      var grupo = function (n, titulo, ayuda, campos, clase) {
+        return h('fieldset', { class: 'grupo-form' }, h('legend', null, h('span', { class: 'grupo-num' }, String(n)), titulo),
+          ayuda ? h('p', { class: 'grupo-ayuda' }, ayuda) : null, h('div', { class: clase || 'rejilla-3' }, campos));
+      };
+      var form = h('form', { class: 'tarjeta form-atender', novalidate: true },
+        h('header', { class: 'seccion-cabeza' }, h('h2', null, 'Actualizar solicitud'), h('p', { class: 'gris' }, 'Atiende la solicitud por partes. Al guardar, se registra en el seguimiento.')),
+        grupo(1, 'Estatus y asignación', 'En qué va la solicitud y quién la atiende.',
+          [campo('Estado', estado), campo('Responsable', resp), campo('Folio CSTEXT', cstext), campo('Categorización', categ)], 'rejilla-4'),
+        grupo(2, 'Transporte y programación', 'Quién lleva el material y cuándo se carga.',
+          [campo('Transportista', transp), campo('Unidad asignada', unidad), campo('Guía o referencia', guia), campo('Fecha de carga', fprog)], 'rejilla-4'),
+        grupo(3, 'Costo', 'Lo que se pagará por el servicio.',
+          [campo('Monto ($)', monto), campo('¿Flete, maniobras o paquetería?', concepto), campo('Tipo de movimiento', tipoMov)]),
+        grupo(4, 'Fechas de quien solicita', s.fecha_abierta === 'Sí' ? 'La pidió con fecha abierta: asígnala aquí.' : 'Las fechas tentativas que pidió el área.',
+          [campo((nuevo ? 'Fecha tentativa de recolección' : 'Fecha requerida'), freq),
+            fent ? campo('Fecha tentativa de entrega', fent) : null,
+            frec ? campo((nuevo ? 'Recolección posterior' : 'Fecha de recolección') + (s.recoleccion_abierta === 'Sí' ? ' (abierta)' : ''), frec) : null]),
+        grupo(5, 'Plantilla de facturación', 'Alimenta el formato de Excel que descarga Facturación.',
+          [campo('Estado de origen', oEst), campo('Estado de destino', dEst), campo('Cliente', cliFact), campo('Requiere factura de maniobra', maniobra), campo('CST', cstCampo)]),
+        grupo(6, 'Comunicación', null,
+          [campo('Notas internas (no las ve quien solicita)', notas), campo('Mensaje para quien solicita', mensaje),
+            h('div', { class: 'todo opciones-mensaje' },
+              h('label', { class: 'chico' }, visible, ' El mensaje lo ve quien solicita (si no, queda como nota interna)'),
+              h('label', { class: 'chico' }, avisar, ' Avisar por correo a ' + s.correo))], 'rejilla'),
+        catalogos,
+        h('div', { class: 'form-pie' }, h('p', { class: 'gris chico' }, 'El folio de la solicitud es su consecutivo CSTEXT.'), guardar));
       visible.addEventListener('change', function () { avisar.disabled = !visible.checked; if (!visible.checked) avisar.checked = false; });
       form.addEventListener('submit', function (ev) {
         ev.preventDefault();
@@ -425,7 +433,19 @@ window.API = API;
             h('span', { class: 'gris chico', style: 'white-space:nowrap' }, (c.estado === 'enviado' ? '✓ ' : '✗ ') + U.fechaHora(c.fecha)));
         })) : h('p', { class: 'gris' }, 'Sin correos.'));
 
-      mount(main, volver, cabecera, h('div', { class: 'detalle' }, h('div', null, devolucion, paquetes, ruta, archivos, hilo, correos), h('div', null, tarjetaAut, puedeOperar ? form : facturaInfo(s))));
+      /* Barra de secciones: salta a cada parte del folio. */
+      var secciones = [['s-atender', puedeOperar ? 'Actualizar' : 'Facturación'], ['s-autorizacion', 'Autorización'], ['s-ruta', 'Ruta y detalle'],
+        ['s-expediente', 'Expediente'], ['s-seguimiento', 'Seguimiento'], ['s-correos', 'Correos']];
+      var barra = h('nav', { class: 'segmentos', 'aria-label': 'Secciones del folio' }, secciones.map(function (x) {
+        return h('button', { type: 'button', onclick: function () { var el = document.getElementById(x[0]); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, x[1]);
+      }));
+      var bloque = function (id, el) { if (el) el.id = id; return el; };
+      mount(main, volver, cabecera, barra,
+        h('div', { class: 'detalle-segmentos' },
+          bloque('s-atender', puedeOperar ? form : facturaInfo(s)),
+          h('div', { class: 'detalle-2' }, h('div', null, bloque('s-autorizacion', tarjetaAut), devolucion, paquetes), h('div', null, bloque('s-ruta', ruta))),
+          h('div', { class: 'detalle-2' }, h('div', null, bloque('s-expediente', archivos)), h('div', null, bloque('s-seguimiento', hilo))),
+          bloque('s-correos', correos)));
     }
 
     /* Facturación ve los datos de la plantilla, sin poder cambiar la solicitud. */

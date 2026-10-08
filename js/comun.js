@@ -206,12 +206,12 @@ window.U = (function () {
         if (b[0] === '' && !archivos && !subir) return null;
         var input = null;
         if (subir) {
-          input = h('input', { type: 'file', multiple: true, class: 'entrada', 'aria-label': 'Agregar ' + b[1].toLowerCase() });
+          input = h('input', { type: 'file', multiple: true, class: 'archivo-oculto', 'aria-label': 'Agregar ' + b[1].toLowerCase() });
           input.addEventListener('change', function () { if (input.files.length) { input.disabled = true; subir(b[0], Array.prototype.slice.call(input.files)); } });
         }
         var vacio = !archivos && !extra ? h('p', { class: 'gris chico', style: 'margin:0' }, b[0] === 'autorizacion' ? 'No requiere autorización.' : 'Pendiente.') : null;
         return h('div', { class: 'exp-bloque' }, h('h3', null, b[1]), extra, archivos, vacio,
-          input ? h('label', { class: 'exp-subir chico' }, h('span', null, 'Agregar ' + (b[0] === '' ? 'documento' : b[1].toLowerCase())), input) : null);
+          input ? h('label', { class: 'btn btn-chico btn-adjuntar exp-boton' }, '📎 Agregar ' + (b[0] === '' ? 'documento' : b[1].toLowerCase()), input) : null);
       }));
   }
 
