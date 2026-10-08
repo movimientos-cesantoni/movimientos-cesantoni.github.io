@@ -1,5 +1,5 @@
 /* Autorización de costo desde el correo (sin cuenta). La liga trae un token de un solo uso. */
-import * as API from './servidor.js?v=25';
+import * as API from './servidor.js?v=26';
 window.API = API;
 (function () {
     'use strict';

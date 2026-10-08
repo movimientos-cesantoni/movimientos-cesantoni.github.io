@@ -1,5 +1,5 @@
 /* Formulario y seguimiento de solicitudes (Liga 1). Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=25';
+import * as API from './servidor.js?v=26';
 window.API = API;
 (function () {
     'use strict';
@@ -346,7 +346,7 @@ window.API = API;
         var otra = h('input', { class: 'entrada', id: 'f-area-otra', maxlength: 80, placeholder: 'Escribe tu departamento', 'aria-label': 'Otro departamento', hidden: true, style: 'margin-top:8px' });
         var caja = h('div', null, sel, otra);
         function poner(v) {
-          v = String(v || '').trim();
+          v = API.nombreArea(v);
           if (!v) { sel.value = ''; otra.hidden = true; return; }
           if (cfg.areas.indexOf(v) >= 0) { sel.value = v; otra.hidden = true; otra.value = ''; }
           else { sel.value = OTRA; otra.hidden = false; otra.value = v; }

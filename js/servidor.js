@@ -4,7 +4,7 @@
  * La seguridad real la imponen las reglas de Firestore (firestore.rules, bloque «Solicitudes de movimientos»).
  */
 import * as fb from './firebase-sdk.js?v=13';
-import * as C from './catalogos.js?v=25';
+import * as C from './catalogos.js?v=26';
 
 const CFG = window.CP_CONFIG || {};
 const COL = { config: 'sm_config', admins: 'sm_admins', inv: 'sm_invitaciones', sol: 'sm_solicitudes', correos: 'sm_correos', aut: 'sm_autorizaciones' };
@@ -15,13 +15,28 @@ const VERSION = '1.0-web';
 
 let auth = null, db = null;
 /* Catálogos vigentes: los de catalogos.js, o los que el administrador editó en sm_config/catalogos. */
+/* Áreas escritas parejo: cada palabra con mayúscula inicial («Parque Vehicular»), siglas tal cual (CEDIS),
+   conectores en minúscula («Almacén de Producto») y nombres anteriores al nuevo («Entregas Locales CDMX» → «… Ceramic»). */
+const CONECTORES = ['de', 'del', 'la', 'las', 'los', 'el', 'y', 'e', 'o', 'a', 'en', 'para', 'por', 'con'];
+export function nombreArea(t) {
+  t = String(t || '').trim().replace(/\s+/g, ' ');
+  if (!t) return '';
+  if (C.AREAS_RENOMBRADAS[t.toLowerCase()]) return C.AREAS_RENOMBRADAS[t.toLowerCase()];
+  return t.split(' ').map((w, i) => {
+    if (/^[A-ZÁÉÍÓÚÑ]{2,5}$/.test(w)) return w;
+    const m = w.toLowerCase();
+    if (i > 0 && CONECTORES.includes(m)) return m;
+    return m.charAt(0).toUpperCase() + m.slice(1);
+  }).join(' ');
+}
+const areasParejas = (lista) => [...new Set([].concat(lista || []).map(nombreArea).filter(Boolean))];
 let CAT = { areas: C.AREAS, productos: C.PRODUCTOS, tipos: C.TIPOS, lugares: C.LUGARES };
 function aplicarCatalogos(c) {
   c = c || {};
   const productos = [].concat(c.productos || []).filter((x) => x && x !== 'Otro');
   const tipos = [].concat(c.tipos || []).filter((t) => t && t.clave && t.nombre);
   CAT = {
-    areas: (c.areas || []).length ? c.areas.concat(C.AREAS_NUEVAS.filter((x) => c.areas.indexOf(x) < 0 && (c.revisadas || []).indexOf(x) < 0)) : C.AREAS,
+    areas: (c.areas || []).length ? areasParejas(c.areas.concat(C.AREAS_NUEVAS.filter((x) => (c.revisadas || []).map(nombreArea).indexOf(nombreArea(x)) < 0))) : C.AREAS,
     productos: productos.length ? productos.map((x) => [x, '']).concat([['Otro', '']]) : C.PRODUCTOS,
     tipos: tipos.length ? tipos.map((t) => [t.clave, t.nombre, t.descripcion || '']) : C.TIPOS,
     lugares: Array.isArray(c.lugares) ? c.lugares : C.LUGARES
@@ -361,6 +376,7 @@ function prepararDatos(datos) {
   const errores = validar(d);
   if (Object.keys(errores).length) throw fallo('Revisa los campos marcados: ' + Object.keys(errores).map((k) => C.CAMPOS.find((c) => c[0] === k)[1]).join(', ') + '.');
   d.correo = d.correo.toLowerCase();
+  d.area = nombreArea(d.area);
   const fuera = fueraDeTiempo(d.fecha_requerida);
   const derivados = { dev_cumple: d.tipo === 'devolucion' ? (marcados.length === C.CHECKLIST_DEVOLUCION.length ? 'Sí' : 'No') : '',
     articulos: esp.filas, paquetes: esp.texto, paq_total: String(esp.total), paq_peso_kg: esp.peso ? String(esp.peso) : '', paq_vol_kg: esp.vol ? String(esp.vol) : '',
@@ -659,7 +675,7 @@ export async function adminDatos() {
     prioridad: prioridad(s.prioridad), tipo: s.tipo, tipo_nombre: movimientoNombre(s), producto: productoNombre(s), articulos: articulosTexto(s),
     costo: costoTexto(s), fecha_requerida: s.fecha_requerida || '', fecha_abierta: s.fecha_abierta || '', recoleccion: s.recoleccion || '',
     fecha_recoleccion: s.fecha_recoleccion || '', recoleccion_abierta: s.recoleccion_abierta || '', fuera_tiempo: s.fuera_tiempo || '',
-    aut_estado: s.aut_estado || '', aut_gerente: s.aut_gerente || '', area: s.area, solicitante: s.solicitante, correo: s.correo, cliente: s.cliente, referencia: s.referencia, cita: s.horario || '',
+    aut_estado: s.aut_estado || '', aut_gerente: s.aut_gerente || '', area: nombreArea(s.area), solicitante: s.solicitante, correo: s.correo, cliente: s.cliente, referencia: s.referencia, cita: s.horario || '',
     origen: lugarTexto(s, 'origen'), destino: lugarTexto(s, 'destino'), dev_motivo: s.dev_motivo || '',
     dev_cumple: s.dev_cumple || '', forma_envio: servicioNombre(s.forma_envio),
     aut_correo: s.aut_correo || '', aut_enviada: s.aut_enviada || '', aut_por: s.aut_por || s.aut_gerente || '', aut_motivo: s.aut_motivo || '', paq_total: s.paq_total || '', paq_peso_kg: s.paq_peso_kg || '',
@@ -869,7 +885,7 @@ export async function adminGuardarCatalogos(_t, cat) {
   soloAdmin(await sesionPanel(true));
   cat = cat || {};
   const limpia = (l, max) => [...new Set([].concat(l || []).map((x) => String(x || '').trim().slice(0, max)).filter(Boolean))];
-  const areas = limpia(cat.areas, 80), productos = limpia(cat.productos, 40).filter((x) => x.toLowerCase() !== 'otro');
+  const areas = areasParejas(limpia(cat.areas, 80)), productos = limpia(cat.productos, 40).filter((x) => x.toLowerCase() !== 'otro');
   if (!areas.length) throw fallo('Deja al menos un área.');
   if (!productos.length) throw fallo('Deja al menos una opción en «¿Qué envías?».');
   const slug = (t) => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30);

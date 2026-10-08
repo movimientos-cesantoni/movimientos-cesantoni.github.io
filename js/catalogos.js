@@ -2,7 +2,9 @@
    Generado desde solicitudes-movimientos/Code.gs del repositorio privado; para cambiar un catálogo edítalo aquí. */
 /* Estados de la República (origen y destino). */
 export const ESTADOS_MX = ["Aguascalientes","Baja California","Baja California Sur","Campeche","Chiapas","Chihuahua","Ciudad de México","Coahuila","Colima","Durango","Estado de México","Guanajuato","Guerrero","Hidalgo","Jalisco","Michoacán","Morelos","Nayarit","Nuevo León","Oaxaca","Puebla","Querétaro","Quintana Roo","San Luis Potosí","Sinaloa","Sonora","Tabasco","Tamaulipas","Tlaxcala","Veracruz","Yucatán","Zacatecas"];
-export const AREAS = ["Customer Service","Mercadotecnia","Calidad","Distribución","Almacén / CEDIS","Última Milla Zacatecas","Entregas Locales CDMX","Producción","Parque vehicular","Logística"];
+export const AREAS = ["Customer Service","Mercadotecnia","Calidad","Distribución","Almacén / CEDIS","Última Milla Zacatecas","Entregas Locales Ceramic","Producción","Parque Vehicular","Logística","Exhibición"];
+/* Nombres anteriores que cambiaron (en minúsculas → nombre nuevo). */
+export const AREAS_RENOMBRADAS = { "entregas locales cdmx": "Entregas Locales Ceramic" };
 /* Áreas nuevas que se agregan aunque el administrador ya haya guardado su lista (una vez; después las puede quitar). */
 /* Lugares frecuentes de origen y destino: al elegirlos se llenan ciudad, Estado, dirección y contacto.
    El administrador los corrige o agrega en Configuración › Lugares frecuentes. */
@@ -10,7 +12,7 @@ export const LUGARES = [
   { nombre: "CEDIS Planta", ciudad: "Calera de Víctor Rosales", estado: "Zacatecas", direccion: "CEDIS Planta CESANTONI", link: "", contacto: "", telefono: "" },
   { nombre: "CEDIS Cuautitlán", ciudad: "Cuautitlán", estado: "Estado de México", direccion: "CEDIS Cuautitlán CESANTONI", link: "", contacto: "", telefono: "" }
 ];
-export const AREAS_NUEVAS = ["Parque vehicular","Logística"];
+export const AREAS_NUEVAS = ["Parque Vehicular","Logística","Exhibición"];
 /* Tipo de movimiento (qué se hace con el producto). Las claves se conservan para no afectar solicitudes ya guardadas. */
 export const TIPOS = [["envio","Entrega de producto","Llevar producto o material a un destino."],["entrega_recoleccion","Entrega y posterior recolección","Se entrega y después se recoge (eventos, stands, sillas, mobiliario)."],["recoleccion","Recolección","Recoger material en un punto."],["devolucion","Devolución de producto","Material que regresa un cliente. Pide fotos y checklist."],["traslado","Traslado","Entre plantas, CEDIS, bodegas o sucursales."],["mercadotecnia","Mercadotecnia","Stands, exhibidores y eventos."],["otro","Otro","Cualquier otro movimiento; lo especificas."]];
 /* Movimientos en los que se pregunta si el material regresa después (fecha de recolección). */
