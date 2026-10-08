@@ -1,5 +1,5 @@
 /* Formulario y seguimiento de solicitudes (Liga 1). Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=23';
+import * as API from './servidor.js?v=24';
 window.API = API;
 (function () {
     'use strict';
@@ -367,8 +367,33 @@ window.API = API;
         confirmarCorreo()));
 
       /* ---------- 3 y 4 · ¿De dónde? / ¿A dónde? (misma lógica) */
+      /* Lugares frecuentes (CEDIS Planta, CEDIS Cuautitlán…): un clic llena ciudad, Estado, dirección y contacto; se puede corregir después. */
+      function lugaresFrecuentes(pre) {
+        var lista = cfg.lugares || [];
+        if (!lista.length) return null;
+        var botones = [];
+        var poner = function (k, v) { var c = campos[pre + k]; if (c) { c.control.value = v || ''; c.error.hidden = true; c.wrap.classList.remove('invalido'); } };
+        function elegir(l, b) {
+          botones.forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+          if (!l) { ['_ciudad', '_estado', '_direccion', '_link'].forEach(function (k) { poner(k, ''); }); campos[pre + '_ciudad'].control.focus(); return; }
+          poner('_ciudad', l.ciudad); poner('_estado', l.estado); poner('_direccion', l.direccion || l.nombre); poner('_link', l.link);
+          if (l.contacto) poner('_contacto', l.contacto);
+          if (l.telefono) poner('_telefono', l.telefono);
+        }
+        lista.forEach(function (l) {
+          var b = h('button', { type: 'button', class: 'lugar-btn', 'aria-pressed': 'false' }, h('b', null, l.nombre), h('small', null, [l.ciudad, l.estado].filter(Boolean).join(', ')));
+          b.addEventListener('click', function () { elegir(l, b); });
+          botones.push(b);
+        });
+        var otro = h('button', { type: 'button', class: 'lugar-btn', 'aria-pressed': 'false' }, h('b', null, 'Otro lugar'), h('small', null, 'Escribir la dirección'));
+        otro.addEventListener('click', function () { elegir(null, otro); });
+        botones.push(otro);
+        return h('div', { class: 'campo todo' }, h('span', { class: 'etiqueta' }, 'Lugares frecuentes'),
+          h('div', { class: 'lugares' }, botones), h('p', { class: 'ayuda' }, 'Elige uno y se llenan los datos; puedes corregirlos abajo.'));
+      }
       function ubicacion(pre, titulo, intro) {
         return h('div', { class: 'paso' }, seccion(titulo, intro,
+          lugaresFrecuentes(pre),
           texto(pre + '_ciudad', 'Ciudad o municipio', { req: true, max: 80, ejemplo: pre === 'origen' ? 'Ej. Calera' : 'Ej. Gómez Palacio' }),
           lista(pre + '_estado', 'Estado', cfg.estados_mx, { req: true }),
           texto(pre + '_direccion', 'Ubicación / dirección', { req: true, max: 300, todo: true, ejemplo: 'Calle, número, colonia y CP (o nombre del lugar)' }),

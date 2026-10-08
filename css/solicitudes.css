@@ -538,3 +538,12 @@ body.menu-abierto { overflow:hidden; }
 .confirmar-fila .entrada { max-width:180px; letter-spacing:4px; font-size:18px; text-align:center; }
 .confirmar-correo .ayuda { margin-top:8px; }
 @media (max-width:760px) { .confirmar-fila .entrada { max-width:none; flex:1 1 140px; } .confirmar-fila .btn { flex:1 1 100%; } }
+
+/* Lugares frecuentes (origen y destino) */
+.lugares { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px; }
+.lugar-btn { display:grid; gap:2px; text-align:left; padding:14px 16px; border:1px solid #CDD5DB; border-radius:10px; background:#fff; cursor:pointer; font:inherit; color:var(--tinta); }
+.lugar-btn small { color:var(--gris); font-size:12px; }
+.lugar-btn:hover { border-color:#929EA8; }
+.lugar-btn[aria-pressed="true"] { border-color:var(--naranja); background:var(--naranja-claro); box-shadow:inset 0 0 0 1px var(--naranja); }
+.lugar-btn:focus-visible { outline:2px solid var(--naranja); outline-offset:2px; }
+.lugares-edit .entrada { min-height:38px; padding:6px 9px; font-size:13px; min-width:120px; }

@@ -4,7 +4,7 @@
  * La seguridad real la imponen las reglas de Firestore (firestore.rules, bloque «Solicitudes de movimientos»).
  */
 import * as fb from './firebase-sdk.js?v=13';
-import * as C from './catalogos.js?v=23';
+import * as C from './catalogos.js?v=24';
 
 const CFG = window.CP_CONFIG || {};
 const COL = { config: 'sm_config', admins: 'sm_admins', inv: 'sm_invitaciones', sol: 'sm_solicitudes', correos: 'sm_correos', aut: 'sm_autorizaciones' };
@@ -15,7 +15,7 @@ const VERSION = '1.0-web';
 
 let auth = null, db = null;
 /* Catálogos vigentes: los de catalogos.js, o los que el administrador editó en sm_config/catalogos. */
-let CAT = { areas: C.AREAS, productos: C.PRODUCTOS, tipos: C.TIPOS };
+let CAT = { areas: C.AREAS, productos: C.PRODUCTOS, tipos: C.TIPOS, lugares: C.LUGARES };
 function aplicarCatalogos(c) {
   c = c || {};
   const productos = [].concat(c.productos || []).filter((x) => x && x !== 'Otro');
@@ -23,7 +23,8 @@ function aplicarCatalogos(c) {
   CAT = {
     areas: (c.areas || []).length ? c.areas.concat(C.AREAS_NUEVAS.filter((x) => c.areas.indexOf(x) < 0 && (c.revisadas || []).indexOf(x) < 0)) : C.AREAS,
     productos: productos.length ? productos.map((x) => [x, '']).concat([['Otro', '']]) : C.PRODUCTOS,
-    tipos: tipos.length ? tipos.map((t) => [t.clave, t.nombre, t.descripcion || '']) : C.TIPOS
+    tipos: tipos.length ? tipos.map((t) => [t.clave, t.nombre, t.descripcion || '']) : C.TIPOS,
+    lugares: Array.isArray(c.lugares) ? c.lugares : C.LUGARES
   };
 }
 async function cargarCatalogos() { try { aplicarCatalogos(await getOne(ref(COL.config, 'catalogos'))); } catch (e) { /* se quedan los de catalogos.js */ } }
@@ -273,7 +274,7 @@ export function configPortal() {
     formas_envio: C.FORMAS_ENVIO, paqueteria: C.PAQUETERIA, factor_volumetrico: C.FACTOR_VOLUMETRICO,
     motivos_devolucion: C.MOTIVOS_DEVOLUCION, checklist: C.CHECKLIST_DEVOLUCION, max_mb: MAX_MB, hoy: hoy(),
     limite_programado: sumarDias(hoy(), C.DIAS_ANTICIPACION), productos: CAT.productos, estados_mx: C.ESTADOS_MX, costos: C.COSTOS, costo_autoriza: C.COSTO_AUTORIZA,
-    aut_estados: C.AUT_ESTADOS, condiciones: C.CONDICIONES,
+    aut_estados: C.AUT_ESTADOS, condiciones: C.CONDICIONES, lugares: CAT.lugares,
     sesion: u ? { correo: u.email } : null };
 }
 
@@ -839,7 +840,7 @@ export async function adminConfig() {
   const personas = (av.personas || []).length ? av.personas
     : (av.correos || []).map((c) => ({ nombre: '', correo: c, alertas: C.ALERTAS.map((x) => x[0]) }));
   return { avisos: (av.correos || []).join(', '), personas, alertas: C.ALERTAS, roles: C.ROLES, usuarios, version: VERSION, url: urlPortal(), panel: urlPanel(),
-    catalogos: { areas: CAT.areas, productos: CAT.productos.map((x) => x[0]).filter((x) => x !== 'Otro'), tipos: CAT.tipos.map((t) => ({ clave: t[0], nombre: t[1], descripcion: t[2] || '' })) },
+    catalogos: { areas: CAT.areas, productos: CAT.productos.map((x) => x[0]).filter((x) => x !== 'Otro'), tipos: CAT.tipos.map((t) => ({ clave: t[0], nombre: t[1], descripcion: t[2] || '' })), lugares: CAT.lugares },
     plantilla: plantilla ? { nombre: plantilla.nombre, subida: plantilla.subida, por: plantilla.por, n: (plantilla.transportistas || []).length } : null,
     tipos_fijos: C.TIPOS_FIJOS, cstext_siguiente: cstext ? (Number(cstext.n) || 0) + 1 : null, cstext_ultimo: cstext ? cstext.ultimo || '' : '' };
 }
@@ -883,9 +884,23 @@ export async function adminGuardarCatalogos(_t, cat) {
   });
   const faltan = C.TIPOS_FIJOS.filter((k) => !claves.has(k));
   if (faltan.length) throw fallo('No se pueden quitar estos movimientos (los usa el formulario): ' + faltan.map(tipoNombre).join(', ') + '.');
-  await fb.setDoc(ref(COL.config, 'catalogos'), { areas, productos, tipos, revisadas: C.AREAS_NUEVAS, actualizado: ahora() });
-  aplicarCatalogos({ areas, productos, tipos, revisadas: C.AREAS_NUEVAS });
+  await fb.setDoc(ref(COL.config, 'catalogos'), { areas, productos, tipos, revisadas: C.AREAS_NUEVAS, actualizado: ahora() }, { merge: true });
+  aplicarCatalogos({ areas, productos, tipos, revisadas: C.AREAS_NUEVAS, lugares: CAT.lugares });
   return (await adminConfig()).catalogos;
+}
+/* Lugares frecuentes de origen y destino (CEDIS Planta, CEDIS Cuautitlán…). */
+export async function adminGuardarLugares(_t, lista) {
+  soloAdmin(await sesionPanel(true));
+  const txt = (v, n) => String(v || '').trim().slice(0, n);
+  const lugares = [].concat(lista || []).map((l) => ({ nombre: txt(l.nombre, 60), ciudad: txt(l.ciudad, 80), estado: txt(l.estado, 40), direccion: txt(l.direccion, 300),
+    link: txt(l.link, 500), contacto: txt(l.contacto, 160), telefono: txt(l.telefono, 40) })).filter((l) => l.nombre);
+  lugares.forEach((l) => {
+    if (l.estado && !C.ESTADOS_MX.includes(l.estado)) throw fallo('Elige el Estado de «' + l.nombre + '» de la lista.');
+    if (!linkOk(l.link)) throw fallo('El link de «' + l.nombre + '» debe empezar con https://.');
+  });
+  await fb.setDoc(ref(COL.config, 'catalogos'), { lugares, actualizado: ahora() }, { merge: true });
+  CAT.lugares = lugares;
+  return lugares;
 }
 /* Desde qué número sigue el folio CSTEXT (por ejemplo, 760 → CSTEXT00760). */
 export async function adminGuardarCstext(_t, siguiente) {

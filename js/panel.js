@@ -1,7 +1,7 @@
 /* Panel de Logística (Liga 2): base de solicitudes. Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=23';
-import { libroXlsx, zipArchivos } from './xlsx.js?v=23';
-import { analizarPlantilla, crearGenerador, fechaLarga, aBase64, deBase64 } from './plantilla.js?v=23';
+import * as API from './servidor.js?v=24';
+import { libroXlsx, zipArchivos } from './xlsx.js?v=24';
+import { analizarPlantilla, crearGenerador, fechaLarga, aBase64, deBase64 } from './plantilla.js?v=24';
 window.API = API;
 (function () {
     'use strict';
@@ -822,7 +822,7 @@ window.API = API;
           h('section', { class: 'tarjeta' }, h('h2', null, 'Enlaces'),
             h('p', null, 'Portal para solicitar (compártelo con las áreas): ', h('br'), h('a', { href: c.url, target: '_blank', rel: 'noopener' }, c.url)),
             h('p', null, 'Este panel (base de Logística): ', h('br'), h('a', { href: c.panel, target: '_blank', rel: 'noopener' }, c.panel)))];
-        if (esAdmin) partes.push(plantillaMovimientos(c), alertas(c), consecutivo(c), catalogos(c), usuarios(c.usuarios, c.roles));
+        if (esAdmin) partes.push(plantillaMovimientos(c), alertas(c), consecutivo(c), catalogos(c), lugares(c), usuarios(c.usuarios, c.roles));
         mount(main, partes);
       }).catch(fallo);
     }
@@ -937,6 +937,42 @@ window.API = API;
           h('div', { class: 'todo' }, h('label', { class: 'etiqueta-panel' }, 'Tipos de movimiento (los usa el planeador para clasificar)'), caja,
             h('button', { class: 'btn btn-chico', type: 'button', style: 'margin-top:8px', onclick: function () { tipos.push({ clave: '', nombre: '', descripcion: '' }); pintar(); } }, '+ Agregar tipo de movimiento'))),
         h('div', { style: 'margin-top:12px' }, guardar));
+    }
+
+    /* Lugares frecuentes del formulario (origen y destino): un clic llena ciudad, Estado, dirección y contacto. */
+    function lugares(c) {
+      var filas = (c.catalogos.lugares || []).map(function (l) { return Object.assign({}, l); });
+      var estados = [['', 'Estado…']].concat(cfg.estados_mx.map(function (e) { return [e, e]; }));
+      var cuerpo = h('tbody');
+      function pintar() {
+        mount(cuerpo, filas.map(function (l, i) {
+          var celda = function (k, ph, ancho) {
+            var el = h('input', { class: 'entrada', value: l[k] || '', placeholder: ph, 'aria-label': ph + ' del lugar ' + (i + 1), style: ancho ? 'min-width:' + ancho + 'px' : null });
+            el.addEventListener('input', function () { l[k] = el.value; });
+            return h('td', null, el);
+          };
+          var est = lista(estados, l.estado); est.setAttribute('aria-label', 'Estado del lugar ' + (i + 1));
+          est.addEventListener('change', function () { l.estado = est.value; });
+          return h('tr', { class: 'sin-clic' }, celda('nombre', 'Nombre', 150), celda('ciudad', 'Ciudad'), h('td', null, est), celda('direccion', 'Dirección', 220),
+            celda('link', 'Link de Maps'), celda('contacto', 'Contacto'), celda('telefono', 'Teléfono'),
+            h('td', null, h('button', { class: 'liga chico', type: 'button', onclick: function () { filas.splice(i, 1); pintar(); } }, 'Quitar')));
+        }));
+      }
+      pintar();
+      var guardar = h('button', { class: 'btn btn-osc btn-chico', type: 'button' }, 'Guardar lugares');
+      guardar.addEventListener('click', function () {
+        U.ocupado(guardar, true, 'Guardando…');
+        run('adminGuardarLugares', filas).then(function (r) {
+          U.ocupado(guardar, false); filas = r.map(function (l) { return Object.assign({}, l); }); pintar(); U.toast('Lugares guardados. El formulario ya los muestra.');
+        }).catch(function (e) { U.ocupado(guardar, false); fallo(e); });
+      });
+      return h('section', { class: 'tarjeta' }, h('h2', null, 'Lugares frecuentes'),
+        h('p', { class: 'gris chico' }, 'Aparecen como botones en «¿De dónde sale?» y «¿A dónde va?»: al elegir uno se llenan ciudad, Estado, dirección, link y contacto. Por ejemplo, CEDIS Planta y CEDIS Cuautitlán.'),
+        h('div', { class: 'tabla-caja lugares-edit' }, h('table', null,
+          h('thead', null, h('tr', null, ['Nombre', 'Ciudad', 'Estado', 'Dirección', 'Link', 'Contacto', 'Teléfono', ''].map(function (t) { return h('th', null, t); }))), cuerpo)),
+        h('div', { class: 'acciones', style: 'margin-top:12px' },
+          h('button', { class: 'btn btn-chico', type: 'button', onclick: function () { filas.push({ nombre: '', ciudad: '', estado: '', direccion: '', link: '', contacto: '', telefono: '' }); pintar(); } }, '+ Agregar lugar'),
+          guardar));
     }
 
     function usuarios(cuentas, roles) {

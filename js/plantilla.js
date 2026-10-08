@@ -1,7 +1,7 @@
 /* Formato de movimiento (PLANTILLA_MOVIMIENTOS_EXT.xlsx): toma el archivo que subió el administrador, llena las celdas de cada
    movimiento y devuelve un .xlsx nuevo. Conserva estilos, fórmulas (IVA, retenciones, total) y la tabla de transportistas;
    Excel recalcula las fórmulas al abrirlo. Se trabaja sobre el XML del libro, sin librerías. */
-import { zipBytes } from './xlsx.js?v=23';
+import { zipBytes } from './xlsx.js?v=24';
 
 /* Celdas del formato. Si el administrador sube otra versión, se valida que los títulos sigan en su lugar. */
 export const CELDAS = { fecha: 'A6', origen: 'A7', destino: 'I7', folio: 'C9', subtotal: 'L9', transportista: 'C11', tipo: 'C13', observaciones: 'A21' };
