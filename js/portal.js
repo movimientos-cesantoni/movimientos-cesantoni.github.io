@@ -1,5 +1,5 @@
 /* Formulario y seguimiento de solicitudes (Liga 1). Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=21';
+import * as API from './servidor.js?v=22';
 window.API = API;
 (function () {
     'use strict';
@@ -302,13 +302,48 @@ window.API = API;
           ejemplo: 'Ej.: lonas, equipo de cómputo, muestras' }),
         casilla('es_devolucion', null, 'Es una devolución de cliente (te pediremos fotos y la revisión del material)', { todo: true })));
 
+      /* Clave de confirmación: llega al correo de quien solicita para confirmar que es suyo (no se pide si ya entró con su clave). */
+      var correoConfirmado = '', claveEnviadaA = '';
+      function confirmarCorreo() {
+        var correoActual = function () { return String(valor('correo') || '').trim().toLowerCase(); };
+        var codigo = h('input', { class: 'entrada', id: 'f-codigo', inputmode: 'numeric', maxlength: 6, autocomplete: 'one-time-code', placeholder: '6 dígitos', 'aria-label': 'Clave de confirmación' });
+        var boton = h('button', { class: 'btn btn-osc', type: 'button' }, 'Enviar clave a mi correo');
+        var nota = h('p', { class: 'ayuda' }, 'Para confirmar que eres tú, te enviamos una clave de 6 dígitos a tu correo.');
+        var caja = h('div', { class: 'confirmar-correo' }, h('div', { class: 'confirmar-fila' }, codigo, boton), nota);
+        function pintarNota(texto, ok) { nota.textContent = texto; nota.style.color = ok ? 'var(--ok)' : ''; nota.style.fontWeight = ok ? '600' : ''; }
+        boton.addEventListener('click', function () {
+          var correo = correoActual();
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) { pintarNota('Primero escribe tu correo completo.'); campos.correo.control.focus(); return; }
+          U.ocupado(boton, true, 'Enviando…');
+          run('enviarCodigoCorreo', correo).then(function (m) {
+            claveEnviadaA = correo; U.ocupado(boton, false); boton.textContent = 'Reenviar clave'; pintarNota(m); codigo.focus();
+          }).catch(function (e) { U.ocupado(boton, false); pintarNota(e.message); });
+        });
+        codigo.addEventListener('input', function () {
+          var v = codigo.value.replace(/\D/g, '');
+          if (v.length < 6) return;
+          if (API.verificarCodigoCorreo(correoActual(), v)) { correoConfirmado = correoActual(); pintarNota('✓ Correo confirmado.', true); campos.codigo_correo.error.hidden = true; campos.codigo_correo.wrap.classList.remove('invalido'); }
+          else pintarNota('La clave no coincide. Revisa el último correo que te enviamos.');
+        });
+        var wrap = campo('codigo_correo', 'Clave de confirmación del correo', caja, { req: true, todo: true, aplica: function () { return !cfg.sesion; } });
+        campos.codigo_correo.leer = function () { return codigo.value; };
+        campos.codigo_correo.validar = function () {
+          var correo = correoActual();
+          if (correoConfirmado && correoConfirmado === correo) return '';
+          if (claveEnviadaA !== correo) return 'Da clic en «Enviar clave a mi correo» y escribe la clave que te llegue.';
+          return 'Escribe la clave de 6 dígitos que te enviamos a ' + correo + '.';
+        };
+        return wrap;
+      }
+
       /* ---------- 2 · Solicitante */
       var catalogoAreas = h('datalist', { id: 'cat-areas' }, cfg.areas.map(function (a) { return h('option', { value: a }); }));
       var pasoSolicitante = h('div', { class: 'paso' }, seccion('Solicitante', 'Quedan ligados al folio. Se recuerdan en este equipo para la próxima vez.',
         texto('solicitante', 'Nombre del solicitante', { req: true, max: 120, auto: 'name', recordar: true }),
         texto('area', 'Departamento / Área', { req: true, max: 80, lista: 'cat-areas', recordar: true, ayuda: 'Elige de la lista o escríbelo.' }),
         texto('correo', 'Correo', { req: true, tipo: 'email', auto: 'email', recordar: true }),
-        texto('telefono', 'Teléfono', { tipo: 'tel', max: 40, auto: 'tel', recordar: true, ayuda: 'Opcional.' }), catalogoAreas));
+        texto('telefono', 'Teléfono', { tipo: 'tel', max: 40, auto: 'tel', recordar: true, ayuda: 'Opcional.' }),
+        confirmarCorreo(), catalogoAreas));
 
       /* ---------- 3 y 4 · ¿De dónde? / ¿A dónde? (misma lógica) */
       function ubicacion(pre, titulo, intro) {
@@ -698,7 +733,11 @@ window.API = API;
         run('crearSolicitud', datos, { clave: claveCuenta ? claveCuenta.value : '' }).then(function (res) {
           cfg.sesion = { correo: datos.correo };
           acceso = res.folio;
-          return subirTodos(porSubir, enviar).then(function (ultima) { confirmacion(ultima || res.solicitud, res.clave); });
+          return subirTodos(porSubir, enviar).then(function (ultima) {
+            /* Con la cotización ya subida, la autorización de costo sale sola a quien autoriza. */
+            if (enviar) enviar.textContent = 'Enviando autorización…';
+            return run('enviarAutorizacionAuto', res.folio).catch(function () { return null; }).then(function (envio) { confirmacion(ultima || res.solicitud, res.clave, envio); });
+          });
         }).catch(function (e) {
           U.ocupado(enviar, false);
           if (e.cuentaExiste) {
@@ -733,13 +772,16 @@ window.API = API;
       });
     }
 
-    function confirmacion(s, clave) {
+    function confirmacion(s, clave, envio) {
       arribaSesion();
       mount(main, h('section', { class: 'tarjeta', style: 'text-align:center;padding:36px 22px' },
         h('p', { class: 'gris', style: 'margin:0' }, 'Tu folio es'),
         h('div', { class: 'folio', style: 'font-size:40px;margin:6px 0 14px' }, s.folio),
         h('h1', null, 'Solicitud recibida'),
         h('p', { class: 'gris' }, 'Te enviamos un correo con tu folio. Logística la revisará y te avisará cada avance.'),
+        envio ? h('div', { class: 'aviso ' + (envio.estado === 'enviado' ? 'aviso-ok' : 'aviso-alerta'), style: 'text-align:left;max-width:460px;margin:14px auto 0' },
+          h('p', null, envio.estado === 'enviado' ? 'Enviamos la solicitud de autorización de costo a ' + envio.para + '. Te avisaremos cuando responda.'
+            : 'No se pudo enviar la solicitud de autorización a ' + envio.para + '. Logística la reenviará desde el panel.')) : null,
         clave ? h('div', { class: 'aviso aviso-info', style: 'text-align:left;max-width:460px;margin:14px auto 0' },
           h('p', null, h('b', null, 'Tu acceso para consultar tus solicitudes')),
           h('p', null, 'Correo: ', h('b', null, cfg.sesion.correo), h('br'), 'Clave: ', h('b', { style: 'font-size:18px;letter-spacing:1px' }, clave)),

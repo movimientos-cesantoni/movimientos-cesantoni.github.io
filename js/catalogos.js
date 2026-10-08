@@ -2,7 +2,9 @@
    Generado desde solicitudes-movimientos/Code.gs del repositorio privado; para cambiar un catálogo edítalo aquí. */
 /* Estados de la República (origen y destino). */
 export const ESTADOS_MX = ["Aguascalientes","Baja California","Baja California Sur","Campeche","Chiapas","Chihuahua","Ciudad de México","Coahuila","Colima","Durango","Estado de México","Guanajuato","Guerrero","Hidalgo","Jalisco","Michoacán","Morelos","Nayarit","Nuevo León","Oaxaca","Puebla","Querétaro","Quintana Roo","San Luis Potosí","Sinaloa","Sonora","Tabasco","Tamaulipas","Tlaxcala","Veracruz","Yucatán","Zacatecas"];
-export const AREAS = ["Customer Service","Mercadotecnia","Calidad","Distribución","Almacén / CEDIS","Última Milla Zacatecas","Entregas Locales CDMX","Producción"];
+export const AREAS = ["Customer Service","Mercadotecnia","Calidad","Distribución","Almacén / CEDIS","Última Milla Zacatecas","Entregas Locales CDMX","Producción","Parque vehicular"];
+/* Áreas nuevas que se agregan aunque el administrador ya haya guardado su lista (una vez; después las puede quitar). */
+export const AREAS_NUEVAS = ["Parque vehicular"];
 /* Tipo de movimiento (qué se hace con el producto). Las claves se conservan para no afectar solicitudes ya guardadas. */
 export const TIPOS = [["envio","Entrega de producto","Llevar producto o material a un destino."],["entrega_recoleccion","Entrega y posterior recolección","Se entrega y después se recoge (eventos, stands, sillas, mobiliario)."],["recoleccion","Recolección","Recoger material en un punto."],["devolucion","Devolución de producto","Material que regresa un cliente. Pide fotos y checklist."],["traslado","Traslado","Entre plantas, CEDIS, bodegas o sucursales."],["mercadotecnia","Mercadotecnia","Stands, exhibidores y eventos."],["otro","Otro","Cualquier otro movimiento; lo especificas."]];
 /* Movimientos en los que se pregunta si el material regresa después (fecha de recolección). */

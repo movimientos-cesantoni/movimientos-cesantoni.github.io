@@ -531,3 +531,10 @@ body.menu-abierto { overflow:hidden; }
   .btn-grande { width:100%; }
   .centrado .tarjeta { padding:22px; }
 }
+
+/* Clave de confirmación del correo */
+.confirmar-correo { background:var(--naranja-claro); border:1px solid #F3C9A6; border-radius:10px; padding:14px 16px; }
+.confirmar-fila { display:flex; gap:10px; flex-wrap:wrap; }
+.confirmar-fila .entrada { max-width:180px; letter-spacing:4px; font-size:18px; text-align:center; }
+.confirmar-correo .ayuda { margin-top:8px; }
+@media (max-width:760px) { .confirmar-fila .entrada { max-width:none; flex:1 1 140px; } .confirmar-fila .btn { flex:1 1 100%; } }

@@ -4,7 +4,7 @@
  * La seguridad real la imponen las reglas de Firestore (firestore.rules, bloque «Solicitudes de movimientos»).
  */
 import * as fb from './firebase-sdk.js?v=13';
-import * as C from './catalogos.js?v=21';
+import * as C from './catalogos.js?v=22';
 
 const CFG = window.CP_CONFIG || {};
 const COL = { config: 'sm_config', admins: 'sm_admins', inv: 'sm_invitaciones', sol: 'sm_solicitudes', correos: 'sm_correos', aut: 'sm_autorizaciones' };
@@ -21,7 +21,7 @@ function aplicarCatalogos(c) {
   const productos = [].concat(c.productos || []).filter((x) => x && x !== 'Otro');
   const tipos = [].concat(c.tipos || []).filter((t) => t && t.clave && t.nombre);
   CAT = {
-    areas: (c.areas || []).length ? c.areas.slice() : C.AREAS,
+    areas: (c.areas || []).length ? c.areas.concat(C.AREAS_NUEVAS.filter((x) => c.areas.indexOf(x) < 0 && (c.revisadas || []).indexOf(x) < 0)) : C.AREAS,
     productos: productos.length ? productos.map((x) => [x, '']).concat([['Otro', '']]) : C.PRODUCTOS,
     tipos: tipos.length ? tipos.map((t) => [t.clave, t.nombre, t.descripcion || '']) : C.TIPOS
   };
@@ -367,8 +367,35 @@ function prepararDatos(datos) {
   return { d, fuera, derivados };
 }
 
+/* Confirmación del correo de quien solicita: una clave de 6 dígitos que llega a ese correo. */
+let codigoCorreo = null, correoConfirmado = '';
+export async function enviarCodigoCorreo(correo) {
+  correo = String(correo || '').trim().toLowerCase();
+  if (!correoOk(correo)) throw fallo('Escribe un correo válido.');
+  if (codigoCorreo && codigoCorreo.correo === correo && Date.now() - codigoCorreo.creado < 20000) throw fallo('Ya te enviamos una clave; espera unos segundos para pedir otra.');
+  const codigo = azar(6, '0123456789');
+  codigoCorreo = { correo, codigo, creado: Date.now(), intentos: 0 };
+  const reg = await enviarCorreo({ plantilla: 'solicitante', para: correo, etiqueta: 'CLAVE DE CONFIRMACIÓN', asunto: 'Tu clave de confirmación: ' + codigo,
+    titulo: 'Confirma tu correo', parrafos: ['Escribe esta clave en el formulario de solicitudes de Logística para confirmar que este correo es tuyo.'],
+    datos: [['Clave de confirmación', codigo]], nota: 'Vence en 30 minutos. Si tú no la pediste, ignora este correo.' });
+  if (reg.estado !== 'enviado') { codigoCorreo = null; throw fallo('No pudimos enviar la clave a ' + correo + '. Revisa que el correo esté bien escrito e inténtalo de nuevo.'); }
+  return 'Te enviamos una clave de 6 dígitos a ' + correo + '. Si no la ves, revisa la carpeta de correo no deseado.';
+}
+export function verificarCodigoCorreo(correo, codigo) {
+  correo = String(correo || '').trim().toLowerCase();
+  codigo = String(codigo || '').replace(/\D/g, '');
+  const c = codigoCorreo;
+  if (!c || c.correo !== correo || Date.now() - c.creado > 30 * 60000 || c.intentos >= 5) return false;
+  if (codigo !== c.codigo) { c.intentos += 1; return false; }
+  correoConfirmado = correo;
+  return true;
+}
+
 export async function crearSolicitud(datos, cuenta) {
   const { d, fuera, derivados } = prepararDatos(datos);
+  if (!auth.currentUser && !String((cuenta && cuenta.clave) || '').trim() && correoConfirmado !== d.correo) {
+    throw fallo('Confirma tu correo con la clave de 6 dígitos que te enviamos (paso «Solicitante»).');
+  }
 
   let claveNueva = '';
   if (!auth.currentUser) {
@@ -396,7 +423,7 @@ export async function crearSolicitud(datos, cuenta) {
   });
   const sol = await getOne(ref(COL.sol, folio));
   const fechas = fechasTexto(sol), ruta = lugarTexto(sol, 'origen') + ' → ' + lugarTexto(sol, 'destino');
-  const avisoAut = sol.aut_motivo ? ['Requiere autorización (' + sol.aut_motivo.toLowerCase() + '). Logística enviará la solicitud de autorización a ' + sol.aut_correo + '.'] : [];
+  const avisoAut = sol.aut_motivo ? ['Requiere autorización (' + sol.aut_motivo.toLowerCase() + '). Le enviamos la solicitud de autorización a ' + sol.aut_correo + '; te avisaremos su respuesta.'] : [];
   await enviarCorreo({ plantilla: 'solicitante', folio, para: d.correo, asunto: 'Solicitud ' + folio + ' recibida · ' + productoNombre(sol),
     titulo: 'Recibimos tu solicitud', parrafos: ['Hola ' + d.solicitante + ', Logística ya tiene tu solicitud. Te avisaremos por este medio cada avance.']
       .concat(fuera ? ['Importante: tu solicitud se hizo con menos de 48 horas de anticipación. Podrán aplicarse sobrecostos y se requiere la autorización del Gerente de Área.'] : [], avisoAut),
@@ -406,9 +433,9 @@ export async function crearSolicitud(datos, cuenta) {
     nota: claveNueva ? 'Con tu correo y esta clave consultas todas tus solicitudes. Si la pierdes, en el portal elige «Olvidé mi clave».' : '' });
   await enviarCorreo({ plantilla: 'interno', folio, para: await avisos('nueva'), etiqueta: sol.prioridad === 'Urgente' ? 'URGENTE' : 'NUEVA SOLICITUD',
     asunto: (sol.prioridad === 'Urgente' ? 'URGENTE · ' : '') + 'Nueva solicitud ' + folio + ' · ' + productoNombre(sol) + ' · ' + movimientoNombre(sol),
-    titulo: productoNombre(sol) + ' · ' + movimientoNombre(sol), parrafos: [sol.solicitante + ' (' + sol.area + ') registró una solicitud.']
+    titulo: productoNombre(sol) + ' · ' + movimientoNombre(sol), parrafos: [sol.solicitante + ' (' + sol.area + ' · ' + sol.correo + ') registró una solicitud.']
       .concat(sol.motivo ? ['Descripción: ' + sol.motivo] : [], fuera ? ['Menos de 48 horas de anticipación: puede aplicar sobrecosto.'] : [],
-        sol.aut_motivo ? ['Requiere autorización: ' + sol.aut_motivo + '. Envíala desde el panel a ' + sol.aut_correo + ' cuando tengas la cotización.'] : []),
+        sol.aut_motivo ? ['Requiere autorización: ' + sol.aut_motivo + '. La solicitud de autorización se envía automáticamente a ' + sol.aut_correo + ' (puedes reenviarla desde el panel).'] : []),
     datos: [['Tipo de solicitud', sol.prioridad], ['Tipo de servicio', sol.forma_envio], ['Especificaciones', sol.paquetes],
       ['Total', sol.paq_total + ' piezas' + (sol.paq_peso_kg ? ' · ' + sol.paq_peso_kg + ' kg' : '')], ['Costo', costoTexto(sol)]].concat(fechas, [['Ruta', ruta]])
       .concat(sol.horario === 'Sí' ? [['Cita', 'Se requiere cita para entregar o recoger']] : [])
@@ -856,8 +883,8 @@ export async function adminGuardarCatalogos(_t, cat) {
   });
   const faltan = C.TIPOS_FIJOS.filter((k) => !claves.has(k));
   if (faltan.length) throw fallo('No se pueden quitar estos movimientos (los usa el formulario): ' + faltan.map(tipoNombre).join(', ') + '.');
-  await fb.setDoc(ref(COL.config, 'catalogos'), { areas, productos, tipos, actualizado: ahora() });
-  aplicarCatalogos({ areas, productos, tipos });
+  await fb.setDoc(ref(COL.config, 'catalogos'), { areas, productos, tipos, revisadas: C.AREAS_NUEVAS, actualizado: ahora() });
+  aplicarCatalogos({ areas, productos, tipos, revisadas: C.AREAS_NUEVAS });
   return (await adminConfig()).catalogos;
 }
 /* Desde qué número sigue el folio CSTEXT (por ejemplo, 760 → CSTEXT00760). */
@@ -906,13 +933,46 @@ export async function adminGuardarUsuario(_t, datos) {
    y en el folio (aut_estado, aut_por, aut_fecha) como evidencia. Las reglas solo dejan responder una vez y con ese token. */
 const urlAutorizar = (t, d) => new URL('autorizar.html?t=' + encodeURIComponent(t) + (d ? '&d=' + d : ''), base()).href;
 function resumenAutorizacion(s, costo) {
-  return [['Folio', s.folio], ['Solicitante', s.solicitante], ['Departamento', s.area], ['Qué se envía', productoNombre(s)],
+  return [['Folio', s.folio], ['Solicitante', s.solicitante], ['Correo de quien solicita', s.correo], ['Departamento', s.area], ['Qué se envía', productoNombre(s)],
     ['Movimiento', movimientoNombre(s)], ['Origen', [lugarTexto(s, 'origen'), ciudadEstado(s, 'origen') ? s.origen_direccion : ''].filter(Boolean).join(' · ')],
     ['Destino', [lugarTexto(s, 'destino'), ciudadEstado(s, 'destino') ? s.destino_direccion : ''].filter(Boolean).join(' · ')],
     ['Tipo de servicio', servicioNombre(s.forma_envio)], ['Cantidad, dimensiones y peso', articulosTexto(s) || s.paquetes],
     ['Peso total', s.paq_peso_kg ? s.paq_peso_kg + ' kg' : '']].concat(fechasTexto(s),
     [['Quién absorbe el costo', costoTexto(s)], ['Costo / cotización', costo || 'Ver cotización adjunta'], ['Motivo de la autorización', s.aut_motivo]])
     .filter((x) => x[1]).map((x) => ({ k: x[0], v: String(x[1]) }));
+}
+/* Envía la liga de autorización de costo: crea el token, copia la cotización y manda el correo a quien autoriza.
+   La usa Logística desde el panel (reenvía y reemplaza la liga anterior) y quien solicita al crear su folio (una sola vez). */
+async function mandarAutorizacion(s, correo, costo, quien) {
+  const folio = s.folio, t = ahora(), token = azar(32, 'abcdefghijklmnopqrstuvwxyz0123456789');
+  const cotizaciones = (await getAll(col(COL.sol, folio, 'archivos'))).filter((x) => x.clase === 'cotizacion').slice(-3);
+  const notificar = [...new Set([s.correo, correoOk(s.responsable_correo) ? s.responsable_correo : null].concat(quien.logistica ? await avisos('autorizacion') : []))].filter(correoOk);
+  const motivo = s.aut_motivo || 'Autorización de costo';
+  const resumenAut = resumenAutorizacion(Object.assign({}, s, { aut_motivo: motivo }), costo);
+  const b = fb.writeBatch(db);
+  if (quien.logistica) {
+    (await getAll(donde(COL.aut, 'folio', folio))).filter((x) => x.estado === C.AUT_PENDIENTE)
+      .forEach((x) => b.update(ref(COL.aut, x.id), { estado: 'Reemplazada', reemplazada: t }));
+  }
+  b.set(ref(COL.aut, token), { folio, correo, estado: C.AUT_PENDIENTE, motivo, resumen: resumenAut, costo, enviada: t, enviada_por: quien.nombre, notificar,
+    archivos: cotizaciones.map((x) => ({ id: x.id, nombre: x.nombre, mime: x.mime, tamano: x.tamano || 0 })) });
+  b.update(ref(COL.sol, folio), quien.logistica ? { aut_estado: C.AUT_PENDIENTE, aut_correo: correo, aut_enviada: t, aut_motivo: motivo, costo_cotizado: costo, actualizada: t }
+    : { aut_enviada: t, actualizada: t });
+  b.set(ref(COL.sol, folio, 'seguimiento', nuevoId()), { fecha: t, autor: quien.logistica ? quien.nombre + ' (Logística)' : s.solicitante,
+    autor_tipo: quien.logistica ? 'logistica' : 'solicitante', visible: true, estado: s.estado,
+    mensaje: (quien.logistica ? 'Se envió' : 'Se envió automáticamente') + ' la solicitud de autorización de costo a ' + correo + '.' });
+  await b.commit();
+  /* Copia de la cotización para que quien autoriza la vea desde la liga, sin cuenta. */
+  for (const x of cotizaciones) {
+    const partes = await getAll(col(COL.sol, folio, 'archivos', x.id, 'partes'));
+    for (const p of partes) await fb.setDoc(ref(COL.aut, token, 'archivos', x.id, 'partes', p.id), { d: p.d });
+  }
+  return enviarCorreo({ plantilla: 'solicitante', folio, para: correo, etiqueta: 'AUTORIZACIÓN DE COSTO',
+    asunto: 'Autorización de costo · ' + folio + ' · ' + s.solicitante + ' · ' + productoNombre(s), titulo: '¿Autorizas el costo de este servicio?',
+    parrafos: [s.solicitante + ' (' + s.area + ' · ' + s.correo + ') solicitó un servicio de Logística que requiere tu autorización.', 'Motivo: ' + motivo + '.'],
+    datos: resumenAut.filter((x) => x.k !== 'Folio' && x.k !== 'Motivo de la autorización').map((x) => [x.k, x.v]),
+    botones: [{ texto: '✓ Autorizar costo', url: urlAutorizar(token, 'autorizar'), color: '#17693F' }, { texto: '✕ Rechazar', url: urlAutorizar(token, 'rechazar'), color: '#B42318' }],
+    nota: 'Al dar clic se abre la plataforma para confirmar tu respuesta. La respuesta queda registrada en el folio como evidencia de la autorización. Si tienes dudas, responde a ' + s.correo + '.' });
 }
 export async function adminEnviarAutorizacion(_t, folio, opciones) {
   const a = await sesionPanel(true);
@@ -924,34 +984,17 @@ export async function adminEnviarAutorizacion(_t, folio, opciones) {
   const correo = String(opciones.correo || s.aut_correo || '').trim().toLowerCase();
   if (!correoOk(correo)) throw fallo('Escribe el correo de quien autoriza el costo.');
   const costo = String(opciones.costo !== undefined ? opciones.costo : s.costo_cotizado || '').trim().slice(0, 160);
-  const t = ahora(), token = azar(32, 'abcdefghijklmnopqrstuvwxyz0123456789');
-  const cotizaciones = (await getAll(col(COL.sol, folio, 'archivos'))).filter((x) => x.clase === 'cotizacion').slice(-3);
-  const notificar = [...new Set([s.correo, correoOk(s.responsable_correo) ? s.responsable_correo : null].concat(await avisos('autorizacion')))].filter(correoOk);
-  const motivo = s.aut_motivo || 'Autorización de costo';
-  const resumenAut = resumenAutorizacion(Object.assign({}, s, { aut_motivo: motivo }), costo);
-  const b = fb.writeBatch(db);
-  (await getAll(donde(COL.aut, 'folio', folio))).filter((x) => x.estado === C.AUT_PENDIENTE)
-    .forEach((x) => b.update(ref(COL.aut, x.id), { estado: 'Reemplazada', reemplazada: t }));
-  b.set(ref(COL.aut, token), { folio, correo, estado: C.AUT_PENDIENTE, motivo, resumen: resumenAut, costo, enviada: t, enviada_por: a.nombre, notificar,
-    archivos: cotizaciones.map((x) => ({ id: x.id, nombre: x.nombre, mime: x.mime, tamano: x.tamano || 0 })) });
-  b.update(ref(COL.sol, folio), { aut_estado: C.AUT_PENDIENTE, aut_correo: correo, aut_enviada: t, aut_motivo: motivo, costo_cotizado: costo, actualizada: t });
-  b.set(ref(COL.sol, folio, 'seguimiento', nuevoId()), { fecha: t, autor: a.nombre + ' (Logística)', autor_tipo: 'logistica', visible: true, estado: s.estado,
-    mensaje: 'Se envió la solicitud de autorización de costo a ' + correo + '.' });
-  await b.commit();
-  /* Copia de la cotización para que quien autoriza la vea desde la liga, sin cuenta. */
-  for (const x of cotizaciones) {
-    const partes = await getAll(col(COL.sol, folio, 'archivos', x.id, 'partes'));
-    for (const p of partes) await fb.setDoc(ref(COL.aut, token, 'archivos', x.id, 'partes', p.id), { d: p.d });
-  }
-  const reg = await enviarCorreo({ plantilla: 'solicitante', folio, para: correo, etiqueta: 'AUTORIZACIÓN DE COSTO',
-    asunto: 'Autorización de costo · ' + folio + ' · ' + productoNombre(s), titulo: '¿Autorizas el costo de este servicio?',
-    parrafos: [s.solicitante + ' (' + s.area + ') solicitó un servicio de Logística que requiere tu autorización.', 'Motivo: ' + motivo + '.'],
-    datos: resumenAut.filter((x) => x.k !== 'Folio' && x.k !== 'Motivo de la autorización').map((x) => [x.k, x.v]),
-    botones: [{ texto: '✓ Autorizar costo', url: urlAutorizar(token, 'autorizar'), color: '#17693F' }, { texto: '✕ Rechazar', url: urlAutorizar(token, 'rechazar'), color: '#B42318' }],
-    nota: 'Al dar clic se abre la plataforma para confirmar tu respuesta. La respuesta queda registrada en el folio como evidencia de la autorización.' });
+  const reg = await mandarAutorizacion(s, correo, costo, { logistica: true, nombre: a.nombre });
   const out = await adminDetalle(null, folio);
   out.envio = reg;
   return out;
+}
+/* Al crear la solicitud (ya con la cotización subida), quien solicita envía la liga a quien autoriza, sin esperar a Logística. */
+export async function enviarAutorizacionAuto(folio) {
+  const u = auth.currentUser;
+  const s = u ? await getOne(ref(COL.sol, folio)).catch(() => null) : null;
+  if (!s || s.uid !== u.uid || s.aut_estado !== C.AUT_PENDIENTE || s.aut_enviada || !correoOk(s.aut_correo)) return null;
+  return mandarAutorizacion(s, s.aut_correo, '', { logistica: false, nombre: s.solicitante + ' (envío automático)' });
 }
 
 async function autorizacionDoc(token) {
