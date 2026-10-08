@@ -1,5 +1,5 @@
 /* Formulario y seguimiento de solicitudes (Liga 1). Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=22';
+import * as API from './servidor.js?v=23';
 window.API = API;
 (function () {
     'use strict';
@@ -337,13 +337,34 @@ window.API = API;
       }
 
       /* ---------- 2 · Solicitante */
-      var catalogoAreas = h('datalist', { id: 'cat-areas' }, cfg.areas.map(function (a) { return h('option', { value: a }); }));
+      /* Departamento: lista desplegable con todas las áreas (siempre completa) y «Otra» para escribirla. */
+      function selectorArea() {
+        var OTRA = '__otra';
+        var sel = h('select', { class: 'entrada', 'aria-label': 'Departamento / Área' }, h('option', { value: '' }, 'Selecciona tu departamento…'),
+          cfg.areas.map(function (a) { return h('option', { value: a }, a); }), h('option', { value: OTRA }, 'Otra (escribirla)'));
+        var otra = h('input', { class: 'entrada', id: 'f-area-otra', maxlength: 80, placeholder: 'Escribe tu departamento', 'aria-label': 'Otro departamento', hidden: true, style: 'margin-top:8px' });
+        var caja = h('div', null, sel, otra);
+        function poner(v) {
+          v = String(v || '').trim();
+          if (!v) { sel.value = ''; otra.hidden = true; return; }
+          if (cfg.areas.indexOf(v) >= 0) { sel.value = v; otra.hidden = true; otra.value = ''; }
+          else { sel.value = OTRA; otra.hidden = false; otra.value = v; }
+        }
+        sel.addEventListener('change', function () { otra.hidden = sel.value !== OTRA; if (!otra.hidden) otra.focus(); });
+        var wrap = campo('area', 'Departamento / Área', caja, { req: true });
+        caja.removeAttribute('id'); sel.id = 'f-area';
+        wrap.querySelector('label').setAttribute('for', 'f-area');
+        campos.area.leer = function () { return sel.value === OTRA ? otra.value.trim() : sel.value; };
+        campos.area.poner = poner;
+        poner(prev.area);
+        return wrap;
+      }
       var pasoSolicitante = h('div', { class: 'paso' }, seccion('Solicitante', 'Quedan ligados al folio. Se recuerdan en este equipo para la próxima vez.',
         texto('solicitante', 'Nombre del solicitante', { req: true, max: 120, auto: 'name', recordar: true }),
-        texto('area', 'Departamento / Área', { req: true, max: 80, lista: 'cat-areas', recordar: true, ayuda: 'Elige de la lista o escríbelo.' }),
+        selectorArea(),
         texto('correo', 'Correo', { req: true, tipo: 'email', auto: 'email', recordar: true }),
         texto('telefono', 'Teléfono', { tipo: 'tel', max: 40, auto: 'tel', recordar: true, ayuda: 'Opcional.' }),
-        confirmarCorreo(), catalogoAreas));
+        confirmarCorreo()));
 
       /* ---------- 3 y 4 · ¿De dónde? / ¿A dónde? (misma lógica) */
       function ubicacion(pre, titulo, intro) {
@@ -678,7 +699,7 @@ window.API = API;
 
       /* Llena el formulario con los datos de un folio (para modificarlo o copiarlo). */
       function precargar(s) {
-        var poner = function (k, v) { var c = campos[k]; if (!c || v === undefined || v === null) return; if (c.casilla) c.casilla.checked = v === 'Sí'; else if (c.grupo) marcar(k, v); else c.control.value = v; };
+        var poner = function (k, v) { var c = campos[k]; if (!c || v === undefined || v === null) return; if (c.poner) c.poner(v); else if (c.casilla) c.casilla.checked = v === 'Sí'; else if (c.grupo) marcar(k, v); else c.control.value = v; };
         poner('producto_tipo', s.producto_tipo); poner('producto_otro', s.producto_otro);
         poner('es_devolucion', s.tipo === 'devolucion' ? 'Sí' : ''); poner('regresa', s.recoleccion === 'Sí' && s.tipo !== 'devolucion' ? 'Sí' : '');
         ['solicitante', 'area', 'telefono', 'motivo', 'observaciones', 'dev_motivo', 'costo_detalle', 'horario'].forEach(function (k) { poner(k, s[k]); });
