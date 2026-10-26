@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Manual del panel de Logística | CESANTONI</title>
+  <meta name="description" content="Cómo pedir un movimiento a Logística y cómo se atiende en el panel: paso a paso para cada perfil.">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#0D1114">
+  <link rel="icon" type="image/png" sizes="32x32" href="img/icono-32.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Montserrat:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/solicitudes.css?v=33">
+  <style>
+    .manual { max-width: 920px; margin: 0 auto; padding: 32px 22px 70px; }
+    .manual-portada { text-align: center; padding: 40px 32px; border-top: 4px solid var(--naranja); }
+    .logos-portada { display: flex; justify-content: center; margin: 0 auto 18px; }
+    .manual-portada h1 { font-size: clamp(28px, 3vw, 38px); margin-bottom: 10px; }
+    .manual-portada p { max-width: 640px; margin: 0 auto 8px; color: var(--gris); font-size: 16px; }
+    .manual-portada .acciones { justify-content: center; margin-top: 22px; }
+    .indice { columns: 2; column-gap: 28px; margin: 0; padding-left: 20px; }
+    .indice li { margin: 6px 0; break-inside: avoid; }
+    .indice a { text-decoration: none; font-weight: 600; }
+    .manual h2 { display: flex; align-items: center; gap: 12px; font-size: 22px; padding-bottom: 14px; border-bottom: 1px solid var(--linea); margin-bottom: 18px; }
+    .manual h2 .grupo-num { width: 32px; height: 32px; font-size: 15px; }
+    .manual h3 { font-size: 16px; margin: 22px 0 8px; }
+    .manual p, .manual li { font-size: 15px; line-height: 1.7; }
+    .manual ol.pasos-m, .manual ul.lista-m { padding-left: 22px; margin: 0 0 8px; }
+    .manual ol.pasos-m > li { margin: 0 0 12px; padding-left: 6px; }
+    .manual ol.pasos-m > li b:first-child { color: var(--tinta); }
+    .tabla-m { width: 100%; border-collapse: collapse; margin: 8px 0 4px; font-size: 14px; }
+    .tabla-m th, .tabla-m td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--linea); vertical-align: top; overflow-wrap: break-word; }
+    .tabla-m th { background: #EAF0F4; color: #455561; font-size: 12px; letter-spacing: .4px; text-transform: uppercase; }
+    .nota { border-left: 3px solid var(--naranja); background: #F8FAFB; border-radius: 8px; padding: 12px 16px; margin: 14px 0; font-size: 14.5px; }
+    .nota b { color: var(--naranja-osc); }
+    .ligas-m { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .liga-m { border: 1px solid var(--linea); border-radius: 12px; padding: 16px 18px; background: #FCFDFD; }
+    .liga-m b { display: block; margin-bottom: 4px; }
+    .liga-m a { overflow-wrap: anywhere; }
+    @media (max-width: 700px) { .indice { columns: 1; } .ligas-m { grid-template-columns: minmax(0, 1fr); } .manual-portada { padding: 28px 18px; } }
+    @media print {
+      .no-imprimir, .barra, .franja { display: none !important; }
+      body { background: #fff; }
+      .manual { padding: 0; max-width: none; }
+      .tarjeta { box-shadow: none; break-inside: avoid-page; border-color: #ccc; }
+      .manual section.tarjeta { break-before: auto; }
+      a { color: #000; }
+    }
+  </style>
+</head>
+<body>
+  <div class="franja"></div>
+  <header class="barra"><div class="barra-in">
+    <span class="logos" id="logos"></span>
+    <span class="titulo-app">Panel de Logística · Manual</span>
+    <span class="espacio"></span>
+  </div></header>
+
+  <main class="manual">
+    <section class="tarjeta manual-portada">
+      <div class="logos logos-portada" id="logos-portada"></div>
+      <p class="ficha-etq">CESANTONI · Somos Logística</p>
+      <h1>Manual del panel de Logística</h1>
+      <p>Cómo pedir un movimiento a Logística y cómo se atiende, paso a paso. Está dividido por perfil: lee solo la parte que te toca.</p>
+      <div class="acciones no-imprimir">
+        <button class="btn btn-pri" type="button" onclick="window.print()">🖨️ Imprimir o guardar en PDF</button>
+        <a class="btn" href="admin.html">Ir al panel</a>
+      </div>
+    </section>
+
+    <section class="tarjeta">
+      <h2>Contenido</h2>
+      <ol class="indice">
+        <li><a href="#ligas">Las dos ligas de la plataforma</a></li>
+        <li><a href="#solicitar">Hacer una solicitud (áreas)</a></li>
+        <li><a href="#reglas">Reglas: 48 horas, corte de las 3 p. m. y autorización</a></li>
+        <li><a href="#seguimiento">Mis solicitudes y modificar</a></li>
+        <li><a href="#perfiles">Perfiles del panel de Logística</a></li>
+        <li><a href="#atender">Atender una solicitud (planeador)</a></li>
+        <li><a href="#estatus">Estatus de una solicitud</a></li>
+        <li><a href="#facturacion">Facturación</a></li>
+        <li><a href="#dashboard">Dashboard de gastos</a></li>
+        <li><a href="#configuracion">Configuración (administrador)</a></li>
+        <li><a href="#dudas">Preguntas frecuentes</a></li>
+      </ol>
+    </section>
+
+    <section class="tarjeta" id="ligas">
+      <h2><span class="grupo-num">1</span>Las dos ligas de la plataforma</h2>
+      <div class="ligas-m">
+        <div class="liga-m"><b>Formulario (para todas las áreas)</b><a href="./">movimientos-cesantoni.github.io</a>
+          <p class="gris chico" style="margin:6px 0 0">Para pedir envíos, recolecciones, devoluciones y traslados, y ver el avance de tus folios.</p></div>
+        <div class="liga-m"><b>Panel de Logística (personal de Logística)</b><a href="admin.html">movimientos-cesantoni.github.io/admin.html</a>
+          <p class="gris chico" style="margin:6px 0 0">Para atender las solicitudes, facturar y ver los gastos. Entras con tu correo y contraseña.</p></div>
+      </div>
+      <p style="margin-top:14px">En ambos, el botón <b>☰</b> (arriba a la izquierda) abre el menú. Arriba a la derecha ves con qué cuenta entraste y el botón <b>Cerrar sesión</b>.</p>
+    </section>
+
+    <section class="tarjeta" id="solicitar">
+      <h2><span class="grupo-num">2</span>Hacer una solicitud (áreas)</h2>
+      <p>Entra al formulario y da clic en <b>Nueva solicitud</b>. Arriba verás la línea de pasos: los terminados se marcan con ✓ y puedes volver a ellos con un clic.</p>
+      <ol class="pasos-m">
+        <li><b>Qué envías.</b> Elige el material (producto, mobiliario, sillas, regalos…). Si es una devolución de cliente, marca la casilla.</li>
+        <li><b>Solicitante.</b> Tu nombre, tu departamento (de la lista; si no está, elige «Otra») y tu correo. La primera vez da clic en <b>Enviar clave a mi correo</b> y escribe la clave de 6 dígitos que te llegue: así confirmamos que el correo es tuyo.</li>
+        <li><b>¿De dónde sale?</b> Usa los botones de <b>lugares frecuentes</b> (CEDIS Planta, CEDIS Cuautitlán) para llenar los datos con un clic, o elige «Otro lugar» y escribe ciudad, Estado y dirección. El link de Google Maps y el contacto ayudan al transportista.</li>
+        <li><b>¿A dónde va?</b> Igual que el origen.</li>
+        <li><b>Servicio.</b> Unidad dedicada o Paquetería. Captura cantidad, medidas (cm) y peso por pieza (kg). Si todas las piezas son iguales, usa un solo renglón con la cantidad.</li>
+        <li><b>Devolución</b> (solo si marcaste devolución). Motivo, fotos del material y la lista de puntos que cumple.</li>
+        <li><b>Costo.</b> Quién absorbe el costo: CESANTONI, Cliente, Proveedor u Otro.</li>
+        <li><b>Documentos.</b> Cotización, correo de autorización y salida. Si lo absorbe CESANTONI o pides con menos de 48 horas, <b>el correo de autorización es obligatorio</b> (ver reglas).</li>
+        <li><b>Fechas tentativas.</b> Recolección y entrega, o «Fecha abierta» si aún no la sabes. Marca si se requiere cita.</li>
+        <li><b>Confirmar.</b> Revisa el resumen, acepta las condiciones y da clic en <b>Enviar solicitud</b>. Te llega un correo con tu <b>folio CSTEXT</b> y, la primera vez, tu clave de acceso.</li>
+      </ol>
+    </section>
+
+    <section class="tarjeta" id="reglas">
+      <h2><span class="grupo-num">3</span>Reglas: 48 horas, corte de las 3 p. m. y autorización</h2>
+      <h3>Anticipación de 48 horas</h3>
+      <p>Las solicitudes deben hacerse con al menos 48 horas de anticipación. Si pides con menos, se marca como <b>Urgente</b> y puede tener sobrecosto.</p>
+      <h3>Hora de corte: 3:00 p. m.</h3>
+      <p>Lo que se envía a partir de las 3:00 p. m. (hora del centro de México) cuenta como recibido <b>al día siguiente</b>. El paso de fechas te dice desde qué día puedes pedir la recolección sin sobrecosto.</p>
+      <h3>Autorización del gasto</h3>
+      <p>Cuando el costo lo absorbe <b>CESANTONI</b> o la solicitud tiene <b>menos de 48 horas</b>, se necesita autorización. Por ahora la autorización es el <b>correo donde se confirmó o autorizó el gasto</b>: adjúntalo en el paso «Documentos» (.eml, .msg, PDF o captura). Queda como evidencia en el expediente del folio.</p>
+      <div class="nota"><b>Importante:</b> sin ese correo adjunto, el formulario no te deja avanzar en esos casos. Si lo consigues después, agrégalo desde «Mis solicitudes» en el expediente del folio.</div>
+    </section>
+
+    <section class="tarjeta" id="seguimiento">
+      <h2><span class="grupo-num">4</span>Mis solicitudes y modificar</h2>
+      <ul class="lista-m">
+        <li><b>Mis solicitudes</b> (menú ☰): entra con tu correo y tu clave para ver el estatus de tus folios, escribir a Logística y agregar documentos al expediente. Si olvidaste la clave, usa «Olvidé mi clave».</li>
+        <li><b>Modificar una solicitud</b> (menú ☰): puedes cambiarla mientras esté <b>Recibida</b>. Cuando Logística ya la está revisando, se bloquea: crea una nueva con los datos correctos y avisa a Logística por correo.</li>
+        <li>Cada avance (programada, en tránsito, completada, falta información) te llega por correo.</li>
+      </ul>
+    </section>
+
+    <section class="tarjeta" id="perfiles">
+      <h2><span class="grupo-num">5</span>Perfiles del panel de Logística</h2>
+      <table class="tabla-m">
+        <thead><tr><th>Perfil</th><th>Qué hace</th></tr></thead>
+        <tbody>
+          <tr><td><b>Administrador</b></td><td>Todo lo de los demás perfiles, más Configuración: personal, alertas, catálogos, lugares frecuentes, folio y plantilla de facturación.</td></tr>
+          <tr><td><b>Planeador</b></td><td>Atiende las solicitudes: estatus, transportista, fecha de carga, monto y concepto (flete, maniobras o paquetería).</td></tr>
+          <tr><td><b>Facturación</b></td><td>Descarga los formatos de las entregas completadas por proveedor y las marca como facturadas. No puede cambiar solicitudes.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="tarjeta" id="atender">
+      <h2><span class="grupo-num">6</span>Atender una solicitud (planeador)</h2>
+      <p>En <b>Solicitudes</b> verás los contadores (abiertas, nuevas, urgentes…), los filtros y la lista. Debajo del estatus aparecen alertas cortas: ● Urgente, ● Requiere cita, ● Devolución no cumple. Da clic en una fila para abrirla.</p>
+      <p>Arriba de cada folio está la <b>ficha</b> con los datos clave y una barra de secciones: Actualizar · Autorización · Ruta y detalle · Expediente · Seguimiento · Correos. El formulario <b>Actualizar solicitud</b> va en 6 grupos:</p>
+      <ol class="pasos-m">
+        <li><b>Estatus y asignación:</b> estatus, responsable, folio CSTEXT y categorización.</li>
+        <li><b>Transporte y programación:</b> transportista (elígelo de la lista para que el formato calcule IVA y retenciones), unidad, guía y fecha de carga.</li>
+        <li><b>Costo:</b> monto, si es flete, maniobras o paquetería, y tipo de movimiento.</li>
+        <li><b>Fechas de quien solicita:</b> asígnalas aquí si la pidieron con fecha abierta.</li>
+        <li><b>Plantilla de facturación:</b> Estado de origen y destino, cliente, factura de maniobra y CST.</li>
+        <li><b>Comunicación:</b> notas internas (solo Logística) y el mensaje para quien solicita, con aviso por correo.</li>
+      </ol>
+      <p>Da clic en <b>Guardar cambios</b>. Todo queda registrado en el seguimiento del folio.</p>
+    </section>
+
+    <section class="tarjeta" id="estatus">
+      <h2><span class="grupo-num">7</span>Estatus de una solicitud</h2>
+      <table class="tabla-m">
+        <thead><tr><th>Estatus</th><th>Significa</th></tr></thead>
+        <tbody>
+          <tr><td><b>Recibida</b></td><td>Llegó a Logística. Aún se puede modificar.</td></tr>
+          <tr><td><b>En revisión</b></td><td>Logística la está cotizando o planeando.</td></tr>
+          <tr><td><b>Falta información</b></td><td>Logística pidió un dato; quien solicita responde desde «Mis solicitudes».</td></tr>
+          <tr><td><b>Programada</b></td><td>Ya tiene transportista y fecha de carga.</td></tr>
+          <tr><td><b>En tránsito</b></td><td>El material va en camino.</td></tr>
+          <tr><td><b>Completada</b></td><td>Entregada. Pasa a Facturación.</td></tr>
+          <tr><td><b>Cancelada / No procede</b></td><td>Se canceló o no se puede realizar (con motivo).</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="tarjeta" id="facturacion">
+      <h2><span class="grupo-num">8</span>Facturación</h2>
+      <ol class="pasos-m">
+        <li>Elige la pestaña <b>Pendientes</b>, el <b>mes de carga</b> y, si quieres, un proveedor.</li>
+        <li>Revisa la columna <b>Documentación</b>: «Lista para preparar» o «N por completar». Con <b>Ver detalle</b> ves cada movimiento; el planeador completa ahí lo que falte (Estados, concepto, subtotal).</li>
+        <li>Marca la casilla de los proveedores y da clic en <b>Descargar selección</b>. Elige <b>Plantilla de movimientos</b> (tu formato de Excel, uno por movimiento, en ZIP con carpetas Fletes, Maniobras y Paquetería) o <b>Resumen consolidado</b> (una hoja por proveedor).</li>
+        <li>Cuando ya facturaste, selecciona y da clic en <b>Marcar como facturadas</b>. Descargar no las marca solo.</li>
+      </ol>
+    </section>
+
+    <section class="tarjeta" id="dashboard">
+      <h2><span class="grupo-num">9</span>Dashboard de gastos</h2>
+      <p>Muestra cuánto se ha gastado por departamento y concepto. Filtra por periodo, departamento y concepto, o da clic en un departamento de la gráfica. Usa los montos que captura el planeador; no incluye canceladas ni rechazadas.</p>
+    </section>
+
+    <section class="tarjeta" id="configuracion">
+      <h2><span class="grupo-num">10</span>Configuración (administrador)</h2>
+      <ul class="lista-m">
+        <li><b>Plantilla de movimientos:</b> sube PLANTILLA_MOVIMIENTOS_EXT.xlsx para que Facturación descargue tu formato lleno.</li>
+        <li><b>Autorización de costo:</b> apagada (como está ahora) pide el correo de autorización adjunto; encendida manda un correo con botones «Autorizar / Rechazar».</li>
+        <li><b>Alertas por correo:</b> quién recibe cada aviso (nueva solicitud, modificación, completada…).</li>
+        <li><b>Folio de solicitudes:</b> desde qué número sigue el CSTEXT.</li>
+        <li><b>Catálogos:</b> departamentos, «¿Qué envías?» y tipos de movimiento.</li>
+        <li><b>Lugares frecuentes:</b> CEDIS y otros lugares que se llenan con un clic.</li>
+        <li><b>Personal del panel:</b> invita con correo y perfil; la persona entra con su contraseña temporal y la cambia.</li>
+      </ul>
+    </section>
+
+    <section class="tarjeta" id="dudas">
+      <h2><span class="grupo-num">11</span>Preguntas frecuentes</h2>
+      <h3>No me llegó la clave o el correo</h3>
+      <p>Revisa la carpeta de correo no deseado. Si no está, vuelve a pedirla con «Reenviar clave» u «Olvidé mi clave».</p>
+      <h3>La página se ve como antes</h3>
+      <p>Tu navegador guardó la versión anterior. Presiona <b>Ctrl + Shift + R</b> (en celular, cierra la pestaña y ábrela de nuevo).</p>
+      <h3>No me deja avanzar en un paso</h3>
+      <p>Los campos que faltan se marcan en rojo con el motivo. Complétalos y da clic en «Siguiente».</p>
+      <h3>¿A quién le pregunto?</h3>
+      <p>Escribe a Logística desde el seguimiento de tu folio; tu mensaje les llega por correo.</p>
+    </section>
+  </main>
+  <script src="js/config.js"></script>
+  <script src="js/comun.js?v=33"></script>
+  <script>U.logos(document.getElementById('logos')); U.logos(document.getElementById('logos-portada'));</script>
+</body>
+</html>

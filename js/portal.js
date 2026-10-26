@@ -1,5 +1,5 @@
 /* Formulario y seguimiento de solicitudes (Liga 1). Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=32';
+import * as API from './servidor.js?v=33';
 window.API = API;
 (function () {
     'use strict';
@@ -28,7 +28,7 @@ window.API = API;
         { clave: 'mis', icono: '📋', titulo: 'Mis solicitudes', ayuda: 'Revisa el avance de tus folios', accion: function () { if (cfg.sesion) misSolicitudes(); else pantallaEntrar(); } },
         { clave: 'modificar', icono: '✎', titulo: 'Modificar una solicitud', ayuda: 'Cambia un folio que aún no se revisa', accion: pantallaModificar },
         { clave: 'ayuda', icono: '❔', titulo: '¿Cómo funciona?', ayuda: 'Los pasos, explicados', accion: ayuda },
-        { clave: 'manual', icono: '📘', titulo: 'Manual de uso', ayuda: 'Todo, paso a paso (se puede imprimir)', accion: function () { location.href = 'manual.html'; } }
+        { clave: 'manual', icono: '📘', titulo: 'Manual de llenado', ayuda: 'Paso a paso, también en PDF', accion: function () { location.href = 'manual.html'; } }
       ], activa, cfg.sesion ? [h('div', { class: 'lateral-usuario' }, h('span', null, 'Entraste como'), h('b', null, cfg.sesion.correo)),
         h('button', { class: 'btn btn-chico', type: 'button', onclick: salir }, 'Salir')] : null, 'Solicitudes de movimientos');
     }

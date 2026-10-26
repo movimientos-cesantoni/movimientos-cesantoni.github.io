@@ -1,7 +1,7 @@
 /* Panel de Logística (Liga 2): base de solicitudes. Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=32';
-import { libroXlsx, zipArchivos } from './xlsx.js?v=32';
-import { analizarPlantilla, crearGenerador, fechaLarga, aBase64, deBase64 } from './plantilla.js?v=32';
+import * as API from './servidor.js?v=33';
+import { libroXlsx, zipArchivos } from './xlsx.js?v=33';
+import { analizarPlantilla, crearGenerador, fechaLarga, aBase64, deBase64 } from './plantilla.js?v=33';
 window.API = API;
 (function () {
     'use strict';
@@ -60,7 +60,7 @@ window.API = API;
       if (yo.rol !== 'facturacion') items.push({ clave: 'solicitudes', icono: '📋', titulo: 'Solicitudes', ayuda: 'Ver y atender los pedidos', accion: function () { cargar().then(tablero); } });
       if (yo.rol !== 'planeador') items.push({ clave: 'facturacion', icono: '🧾', titulo: 'Facturación', ayuda: 'Plantillas por proveedor', accion: function () { cargar().then(facturacion); } });
       items.push({ clave: 'gastos', icono: '📊', titulo: 'Dashboard', ayuda: 'Gastos por departamento', accion: function () { cargar().then(gastos); } });
-      items.push({ clave: 'manual', icono: '📘', titulo: 'Manual de uso', ayuda: 'Cómo funciona cada perfil', accion: function () { window.open('manual.html#perfiles', '_blank'); } });
+      items.push({ clave: 'manual', icono: '📘', titulo: 'Manual de uso', ayuda: 'Cómo funciona cada perfil', accion: function () { window.open('manual-logistica.html#perfiles', '_blank'); } });
       items.push({ clave: 'config', icono: '⚙️', titulo: 'Configuración', ayuda: yo.rol === 'admin' ? 'Personal, alertas y catálogos' : 'Mi cuenta y contraseña', accion: configuracion });
       U.menu(destino, items, activa, [h('div', { class: 'lateral-usuario' }, h('b', null, yo.nombre), h('span', null, rolNombre(yo.rol))),
         h('button', { type: 'button', class: 'btn btn-chico', onclick: salir }, 'Salir')], 'Panel de Logística');
