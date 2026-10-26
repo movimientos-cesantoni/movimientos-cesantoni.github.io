@@ -174,7 +174,13 @@ window.U = (function () {
   }
   /* Estado de la autorización (costo de CESANTONI o menos de 48 horas). */
   function estadoAutorizacion(s) {
-    if (!s.aut_estado) return null;
+    if (!s.aut_estado) {
+      /* Sin autorización por correo: la evidencia es el correo de autorización adjunto. */
+      if (!s.aut_motivo) return null;
+      var n = (s.archivos || []).filter(function (a) { return a.clase === 'autorizacion'; }).length;
+      return n ? { clase: 'aviso-ok', titulo: '✓ Autorización adjunta', filas: [['Evidencia', n + (n === 1 ? ' archivo' : ' archivos') + ' en Expediente › Autorización']] }
+        : { clase: 'aviso-alerta', titulo: 'Falta el correo de autorización', filas: [['Qué hacer', 'Adjunta el correo donde se confirmó el gasto en Expediente › Autorización']] };
+    }
     var quien = [s.aut_nombre, s.aut_por || s.aut_gerente].filter(Boolean).join(' · ');
     if (s.aut_estado === 'Autorizado') return { clase: 'aviso-ok', titulo: '✓ Costo autorizado', filas: [['Autorizado por', quien], ['Fecha', dia(s.aut_fecha)], ['Comentario', s.aut_comentario]] };
     if (s.aut_estado === 'Rechazado') return { clase: 'aviso-mal', titulo: '✕ Autorización rechazada', filas: [['Rechazado por', quien], ['Fecha', dia(s.aut_fecha)], ['Motivo', s.aut_comentario]] };

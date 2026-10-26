@@ -80,3 +80,10 @@ distribución por concepto y detalle) y Facturación por proveedor: pestañas Pe
 selección con casillas, «Ver detalle» (el planeador completa ahí Estados, concepto y subtotal) y «Preparar descarga» con dos opciones:
 plantilla de movimientos (un Excel por movimiento, ZIP con Fletes / Maniobras / Paquetería) o resumen consolidado (una hoja por proveedor).
 En la facturación, origen y destino son solo el Estado.
+
+## Autorización de costo y manual (octubre 2026)
+
+La autorización de costo por correo (botones Autorizar / Rechazar) queda apagada por defecto: cuando lo absorbe CESANTONI
+o faltan menos de 48 horas, quien solicita adjunta el correo donde se confirmó el gasto (obligatorio) y la solicitud no queda
+«Pendiente de autorización». Se activa en Configuración › Autorización de costo (`autorizacion_correo` en `sm_config/catalogos`).
+Manual de uso para todos los perfiles en `manual.html` (menú ☰ de ambas ligas), con botón para imprimir o guardar en PDF.

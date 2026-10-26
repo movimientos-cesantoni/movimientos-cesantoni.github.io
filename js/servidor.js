@@ -4,7 +4,7 @@
  * La seguridad real la imponen las reglas de Firestore (firestore.rules, bloque «Solicitudes de movimientos»).
  */
 import * as fb from './firebase-sdk.js?v=13';
-import * as C from './catalogos.js?v=31';
+import * as C from './catalogos.js?v=32';
 
 const CFG = window.CP_CONFIG || {};
 const COL = { config: 'sm_config', admins: 'sm_admins', inv: 'sm_invitaciones', sol: 'sm_solicitudes', correos: 'sm_correos', aut: 'sm_autorizaciones' };
@@ -30,7 +30,7 @@ export function nombreArea(t) {
   }).join(' ');
 }
 const areasParejas = (lista) => [...new Set([].concat(lista || []).map(nombreArea).filter(Boolean))];
-let CAT = { areas: C.AREAS, productos: C.PRODUCTOS, tipos: C.TIPOS, lugares: C.LUGARES };
+let CAT = { areas: C.AREAS, productos: C.PRODUCTOS, tipos: C.TIPOS, lugares: C.LUGARES, autorizacion_correo: false };
 function aplicarCatalogos(c) {
   c = c || {};
   const productos = [].concat(c.productos || []).filter((x) => x && x !== 'Otro');
@@ -39,7 +39,9 @@ function aplicarCatalogos(c) {
     areas: (c.areas || []).length ? areasParejas(c.areas.concat(C.AREAS_NUEVAS.filter((x) => (c.revisadas || []).map(nombreArea).indexOf(nombreArea(x)) < 0))) : C.AREAS,
     productos: productos.length ? productos.map((x) => [x, '']).concat([['Otro', '']]) : C.PRODUCTOS,
     tipos: tipos.length ? tipos.map((t) => [t.clave, t.nombre, t.descripcion || '']) : C.TIPOS,
-    lugares: Array.isArray(c.lugares) ? c.lugares : C.LUGARES
+    lugares: Array.isArray(c.lugares) ? c.lugares : C.LUGARES,
+    /* Autorización de costo por correo (botones Autorizar / Rechazar). Apagada: basta el correo de autorización adjunto. */
+    autorizacion_correo: c.autorizacion_correo === true
   };
 }
 async function cargarCatalogos() { try { aplicarCatalogos(await getOne(ref(COL.config, 'catalogos'))); } catch (e) { /* se quedan los de catalogos.js */ } }
@@ -257,7 +259,8 @@ function validar(d) {
   const fuera = fueraDeTiempo(d.fecha_requerida), cesantoni = d.costo_absorbe === C.COSTO_AUTORIZA;
   d.prioridad = fuera ? 'Urgente' : 'Programado';
   d.aut_motivo = [cesantoni ? 'Costo absorbido por CESANTONI' : '', fuera ? 'Solicitud con menos de 48 horas de anticipación' : ''].filter(Boolean).join(' · ');
-  if (d.aut_motivo) { if (!correoOk(d.aut_correo)) errores.aut_correo = 'Escribe el correo de quien autoriza.'; else d.aut_correo = d.aut_correo.toLowerCase(); }
+  /* Con la autorización por correo apagada, la evidencia es el correo de autorización adjunto: no se pide a quién enviarla. */
+  if (d.aut_motivo && CAT.autorizacion_correo) { if (!correoOk(d.aut_correo)) errores.aut_correo = 'Escribe el correo de quien autoriza.'; else d.aut_correo = d.aut_correo.toLowerCase(); }
   else d.aut_correo = '';
   return errores;
 }
@@ -292,7 +295,7 @@ export function configPortal() {
     formas_envio: C.FORMAS_ENVIO, paqueteria: C.PAQUETERIA, factor_volumetrico: C.FACTOR_VOLUMETRICO,
     motivos_devolucion: C.MOTIVOS_DEVOLUCION, checklist: C.CHECKLIST_DEVOLUCION, max_mb: MAX_MB, hoy: hoy(),
     limite_programado: sumarDias(diaOperativo(), C.DIAS_ANTICIPACION), despues_corte: despuesDelCorte(), dia_operativo: diaOperativo(), productos: CAT.productos, estados_mx: C.ESTADOS_MX, costos: C.COSTOS, costo_autoriza: C.COSTO_AUTORIZA,
-    aut_estados: C.AUT_ESTADOS, condiciones: C.CONDICIONES, lugares: CAT.lugares,
+    aut_estados: C.AUT_ESTADOS, condiciones: C.CONDICIONES, lugares: CAT.lugares, autorizacion_correo: CAT.autorizacion_correo,
     sesion: u ? { correo: u.email } : null };
 }
 
@@ -383,7 +386,7 @@ function prepararDatos(datos) {
   const fuera = fueraDeTiempo(d.fecha_requerida);
   const derivados = { dev_cumple: d.tipo === 'devolucion' ? (marcados.length === C.CHECKLIST_DEVOLUCION.length ? 'Sí' : 'No') : '',
     articulos: esp.filas, paquetes: esp.texto, paq_total: String(esp.total), paq_peso_kg: esp.peso ? String(esp.peso) : '', paq_vol_kg: esp.vol ? String(esp.vol) : '',
-    fuera_tiempo: fuera ? 'Sí' : '', aut_estado: d.aut_motivo ? C.AUT_PENDIENTE : '' };
+    fuera_tiempo: fuera ? 'Sí' : '', aut_estado: d.aut_motivo && CAT.autorizacion_correo ? C.AUT_PENDIENTE : '' };
   return { d, fuera, derivados };
 }
 
@@ -443,7 +446,8 @@ export async function crearSolicitud(datos, cuenta) {
   });
   const sol = await getOne(ref(COL.sol, folio));
   const fechas = fechasTexto(sol), ruta = lugarTexto(sol, 'origen') + ' → ' + lugarTexto(sol, 'destino');
-  const avisoAut = sol.aut_motivo ? ['Requiere autorización (' + sol.aut_motivo.toLowerCase() + '). Le enviamos la solicitud de autorización a ' + sol.aut_correo + '; te avisaremos su respuesta.'] : [];
+  const avisoAut = !sol.aut_motivo ? [] : sol.aut_estado ? ['Requiere autorización (' + sol.aut_motivo.toLowerCase() + '). Le enviamos la solicitud de autorización a ' + sol.aut_correo + '; te avisaremos su respuesta.']
+    : ['Requiere autorización (' + sol.aut_motivo.toLowerCase() + '): queda como evidencia el correo de autorización que adjuntaste.'];
   await enviarCorreo({ plantilla: 'solicitante', folio, para: d.correo, asunto: 'Solicitud ' + folio + ' recibida · ' + productoNombre(sol),
     titulo: 'Recibimos tu solicitud', parrafos: ['Hola ' + d.solicitante + ', Logística ya tiene tu solicitud. Te avisaremos por este medio cada avance.']
       .concat(fuera ? ['Importante: tu solicitud se hizo con menos de 48 horas de anticipación. Podrán aplicarse sobrecostos y se requiere la autorización del Gerente de Área.'] : [], avisoAut),
@@ -455,7 +459,8 @@ export async function crearSolicitud(datos, cuenta) {
     asunto: (sol.prioridad === 'Urgente' ? 'URGENTE · ' : '') + 'Nueva solicitud ' + folio + ' · ' + productoNombre(sol) + ' · ' + movimientoNombre(sol),
     titulo: productoNombre(sol) + ' · ' + movimientoNombre(sol), parrafos: [sol.solicitante + ' (' + sol.area + ' · ' + sol.correo + ') registró una solicitud.']
       .concat(sol.motivo ? ['Descripción: ' + sol.motivo] : [], fuera ? ['Menos de 48 horas de anticipación: puede aplicar sobrecosto.'] : [],
-        sol.aut_motivo ? ['Requiere autorización: ' + sol.aut_motivo + '. La solicitud de autorización se envía automáticamente a ' + sol.aut_correo + ' (puedes reenviarla desde el panel).'] : []),
+        sol.aut_motivo ? [sol.aut_estado ? 'Requiere autorización: ' + sol.aut_motivo + '. La solicitud de autorización se envía automáticamente a ' + sol.aut_correo + ' (puedes reenviarla desde el panel).'
+          : 'Requiere autorización: ' + sol.aut_motivo + '. La evidencia es el correo de autorización adjunto en el expediente.'] : []),
     datos: [['Tipo de solicitud', sol.prioridad], ['Tipo de servicio', sol.forma_envio], ['Especificaciones', sol.paquetes],
       ['Total', sol.paq_total + ' piezas' + (sol.paq_peso_kg ? ' · ' + sol.paq_peso_kg + ' kg' : '')], ['Costo', costoTexto(sol)]].concat(fechas, [['Ruta', ruta]])
       .concat(sol.horario === 'Sí' ? [['Cita', 'Se requiere cita para entregar o recoger']] : [])
@@ -859,7 +864,7 @@ export async function adminConfig() {
   const personas = (av.personas || []).length ? av.personas
     : (av.correos || []).map((c) => ({ nombre: '', correo: c, alertas: C.ALERTAS.map((x) => x[0]) }));
   return { avisos: (av.correos || []).join(', '), personas, alertas: C.ALERTAS, roles: C.ROLES, usuarios, version: VERSION, url: urlPortal(), panel: urlPanel(),
-    catalogos: { areas: CAT.areas, productos: CAT.productos.map((x) => x[0]).filter((x) => x !== 'Otro'), tipos: CAT.tipos.map((t) => ({ clave: t[0], nombre: t[1], descripcion: t[2] || '' })), lugares: CAT.lugares },
+    catalogos: { areas: CAT.areas, productos: CAT.productos.map((x) => x[0]).filter((x) => x !== 'Otro'), tipos: CAT.tipos.map((t) => ({ clave: t[0], nombre: t[1], descripcion: t[2] || '' })), lugares: CAT.lugares, autorizacion_correo: CAT.autorizacion_correo },
     plantilla: plantilla ? { nombre: plantilla.nombre, subida: plantilla.subida, por: plantilla.por, n: (plantilla.transportistas || []).length } : null,
     tipos_fijos: C.TIPOS_FIJOS, cstext_siguiente: cstext ? (Number(cstext.n) || 0) + 1 : null, cstext_ultimo: cstext ? cstext.ultimo || '' : '' };
 }
@@ -904,10 +909,17 @@ export async function adminGuardarCatalogos(_t, cat) {
   const faltan = C.TIPOS_FIJOS.filter((k) => !claves.has(k));
   if (faltan.length) throw fallo('No se pueden quitar estos movimientos (los usa el formulario): ' + faltan.map(tipoNombre).join(', ') + '.');
   await fb.setDoc(ref(COL.config, 'catalogos'), { areas, productos, tipos, revisadas: C.AREAS_NUEVAS, actualizado: ahora() }, { merge: true });
-  aplicarCatalogos({ areas, productos, tipos, revisadas: C.AREAS_NUEVAS, lugares: CAT.lugares });
+  aplicarCatalogos({ areas, productos, tipos, revisadas: C.AREAS_NUEVAS, lugares: CAT.lugares, autorizacion_correo: CAT.autorizacion_correo });
   return (await adminConfig()).catalogos;
 }
 /* Lugares frecuentes de origen y destino (CEDIS Planta, CEDIS Cuautitlán…). */
+/* Encender o apagar la autorización de costo por correo. */
+export async function adminGuardarAutorizacionCorreo(_t, activa) {
+  soloAdmin(await sesionPanel(true));
+  await fb.setDoc(ref(COL.config, 'catalogos'), { autorizacion_correo: activa === true, actualizado: ahora() }, { merge: true });
+  CAT.autorizacion_correo = activa === true;
+  return CAT.autorizacion_correo;
+}
 export async function adminGuardarLugares(_t, lista) {
   soloAdmin(await sesionPanel(true));
   const txt = (v, n) => String(v || '').trim().slice(0, n);

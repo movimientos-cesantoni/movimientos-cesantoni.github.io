@@ -1,7 +1,7 @@
 /* Panel de Logística (Liga 2): base de solicitudes. Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=31';
-import { libroXlsx, zipArchivos } from './xlsx.js?v=31';
-import { analizarPlantilla, crearGenerador, fechaLarga, aBase64, deBase64 } from './plantilla.js?v=31';
+import * as API from './servidor.js?v=32';
+import { libroXlsx, zipArchivos } from './xlsx.js?v=32';
+import { analizarPlantilla, crearGenerador, fechaLarga, aBase64, deBase64 } from './plantilla.js?v=32';
 window.API = API;
 (function () {
     'use strict';
@@ -60,6 +60,7 @@ window.API = API;
       if (yo.rol !== 'facturacion') items.push({ clave: 'solicitudes', icono: '📋', titulo: 'Solicitudes', ayuda: 'Ver y atender los pedidos', accion: function () { cargar().then(tablero); } });
       if (yo.rol !== 'planeador') items.push({ clave: 'facturacion', icono: '🧾', titulo: 'Facturación', ayuda: 'Plantillas por proveedor', accion: function () { cargar().then(facturacion); } });
       items.push({ clave: 'gastos', icono: '📊', titulo: 'Dashboard', ayuda: 'Gastos por departamento', accion: function () { cargar().then(gastos); } });
+      items.push({ clave: 'manual', icono: '📘', titulo: 'Manual de uso', ayuda: 'Cómo funciona cada perfil', accion: function () { window.open('manual.html#perfiles', '_blank'); } });
       items.push({ clave: 'config', icono: '⚙️', titulo: 'Configuración', ayuda: yo.rol === 'admin' ? 'Personal, alertas y catálogos' : 'Mi cuenta y contraseña', accion: configuracion });
       U.menu(destino, items, activa, [h('div', { class: 'lateral-usuario' }, h('b', null, yo.nombre), h('span', null, rolNombre(yo.rol))),
         h('button', { type: 'button', class: 'btn btn-chico', onclick: salir }, 'Salir')], 'Panel de Logística');
@@ -417,8 +418,9 @@ window.API = API;
       });
       var pendiente = !s.aut_estado || s.aut_estado === 'Pendiente de autorización';
       var tarjetaAut = h('section', { class: 'tarjeta' }, h('h2', null, 'Autorización de costo'),
-        U.autorizacion(s) || h('p', { class: 'gris chico' }, 'Esta solicitud no pidió autorización. Si hace falta, envíala desde aquí.'),
-        pendiente && puedeOperar ? h('div', { class: 'rejilla', style: 'margin-top:10px' },
+        U.autorizacion(s) || h('p', { class: 'gris chico' }, cfg.autorizacion_correo ? 'Esta solicitud no pidió autorización. Si hace falta, envíala desde aquí.'
+          : 'Esta solicitud no pidió autorización. Si hay un correo de autorización, adjúntalo en Expediente › Autorización.'),
+        pendiente && puedeOperar && cfg.autorizacion_correo ? h('div', { class: 'rejilla', style: 'margin-top:10px' },
           campo('Correo de quien autoriza', autCorreo, 'todo'), campo('Costo / cotización (va en el correo)', autCosto, 'todo'),
           h('p', { class: 'gris chico todo', style: 'margin:0' }, nCot ? 'Se incluirá ' + (nCot === 1 ? 'la cotización adjunta' : 'las ' + nCot + ' cotizaciones adjuntas') + ' del expediente.'
             : 'Aún no hay cotización en el expediente: puedes agregarla abajo antes de enviar.'),
@@ -843,7 +845,7 @@ window.API = API;
           h('section', { class: 'tarjeta' }, h('h2', null, 'Enlaces'),
             h('p', null, 'Portal para solicitar (compártelo con las áreas): ', h('br'), h('a', { href: c.url, target: '_blank', rel: 'noopener' }, c.url)),
             h('p', null, 'Este panel (base de Logística): ', h('br'), h('a', { href: c.panel, target: '_blank', rel: 'noopener' }, c.panel)))];
-        if (esAdmin) partes.push(plantillaMovimientos(c), alertas(c), consecutivo(c), catalogos(c), lugares(c), usuarios(c.usuarios, c.roles));
+        if (esAdmin) partes.push(plantillaMovimientos(c), autorizacionCorreo(c), alertas(c), consecutivo(c), catalogos(c), lugares(c), usuarios(c.usuarios, c.roles));
         mount(main, partes);
       }).catch(fallo);
     }
@@ -957,6 +959,24 @@ window.API = API;
         h('div', { class: 'rejilla' }, campo('Departamento / Área', areas), campo('¿Qué envías?', productos),
           h('div', { class: 'todo' }, h('label', { class: 'etiqueta-panel' }, 'Tipos de movimiento (los usa el planeador para clasificar)'), caja,
             h('button', { class: 'btn btn-chico', type: 'button', style: 'margin-top:8px', onclick: function () { tipos.push({ clave: '', nombre: '', descripcion: '' }); pintar(); } }, '+ Agregar tipo de movimiento'))),
+        h('div', { style: 'margin-top:12px' }, guardar));
+    }
+
+    /* Autorización de costo por correo: encendida manda la liga con «Autorizar / Rechazar»; apagada basta el correo adjunto. */
+    function autorizacionCorreo(c) {
+      var activa = h('input', { type: 'checkbox', checked: !!c.catalogos.autorizacion_correo, id: 'cfg-aut-correo' });
+      var guardar = h('button', { class: 'btn btn-osc btn-chico', type: 'button' }, 'Guardar');
+      guardar.addEventListener('click', function () {
+        U.ocupado(guardar, true, 'Guardando…');
+        run('adminGuardarAutorizacionCorreo', activa.checked).then(function (v) {
+          U.ocupado(guardar, false); cfg.autorizacion_correo = v;
+          U.toast(v ? 'Autorización por correo activada.' : 'Autorización por correo desactivada: se pide el correo de autorización adjunto.');
+        }).catch(function (e) { U.ocupado(guardar, false); fallo(e); });
+      });
+      return h('section', { class: 'tarjeta' }, h('h2', null, 'Autorización de costo'),
+        h('p', { class: 'gris chico' }, 'Desactivada (como está ahora): cuando lo absorbe CESANTONI o faltan menos de 48 horas, quien solicita adjunta el correo donde se confirmó el gasto. ' +
+          'Activada: la plataforma manda un correo a quien autoriza con los botones «Autorizar costo» y «Rechazar».'),
+        h('label', { class: 'casilla', for: 'cfg-aut-correo', style: 'max-width:520px' }, activa, h('span', null, 'Enviar la autorización por correo (Autorizar / Rechazar)')),
         h('div', { style: 'margin-top:12px' }, guardar));
     }
 

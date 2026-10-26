@@ -1,5 +1,5 @@
 /* Formulario y seguimiento de solicitudes (Liga 1). Misma interfaz que la versión probada, con acceso de Firebase. */
-import * as API from './servidor.js?v=31';
+import * as API from './servidor.js?v=32';
 window.API = API;
 (function () {
     'use strict';
@@ -27,7 +27,8 @@ window.API = API;
         { clave: 'nueva', icono: '➕', titulo: 'Nueva solicitud', ayuda: 'Pide un envío o una recolección', accion: function () { formulario(); } },
         { clave: 'mis', icono: '📋', titulo: 'Mis solicitudes', ayuda: 'Revisa el avance de tus folios', accion: function () { if (cfg.sesion) misSolicitudes(); else pantallaEntrar(); } },
         { clave: 'modificar', icono: '✎', titulo: 'Modificar una solicitud', ayuda: 'Cambia un folio que aún no se revisa', accion: pantallaModificar },
-        { clave: 'ayuda', icono: '❔', titulo: '¿Cómo funciona?', ayuda: 'Los pasos, explicados', accion: ayuda }
+        { clave: 'ayuda', icono: '❔', titulo: '¿Cómo funciona?', ayuda: 'Los pasos, explicados', accion: ayuda },
+        { clave: 'manual', icono: '📘', titulo: 'Manual de uso', ayuda: 'Todo, paso a paso (se puede imprimir)', accion: function () { location.href = 'manual.html'; } }
       ], activa, cfg.sesion ? [h('div', { class: 'lateral-usuario' }, h('span', null, 'Entraste como'), h('b', null, cfg.sesion.correo)),
         h('button', { class: 'btn btn-chico', type: 'button', onclick: salir }, 'Salir')] : null, 'Solicitudes de movimientos');
     }
@@ -49,7 +50,8 @@ window.API = API;
         h('ol', { class: 'pasos-ayuda' }, pasos.map(function (p, i) {
           return h('li', { class: 'tarjeta' }, h('span', { class: 'paso-icono', 'aria-hidden': 'true' }, p[0]), h('div', null, h('h2', null, (i + 1) + '. ' + p[1]), h('p', { class: 'gris', style: 'margin:0' }, p[2])));
         })),
-        h('p', null, h('button', { class: 'btn btn-pri', type: 'button', onclick: function () { formulario(); } }, 'Hacer una solicitud')));
+        h('p', { class: 'acciones' }, h('button', { class: 'btn btn-pri', type: 'button', onclick: function () { formulario(); } }, 'Hacer una solicitud'),
+          h('a', { class: 'btn', href: 'manual.html' }, '📘 Ver el manual completo')));
     }
 
     /* ---------------------------------------------------------------- portada */
@@ -502,12 +504,14 @@ window.API = API;
 
       /* ---------- 6 · ¿Quién absorbe el costo? (+ autorización si es CESANTONI) */
       var infoAut = h('div', { class: 'aviso aviso-alerta todo' },
-        h('p', null, h('b', null, 'Autorización de costo. '), 'Cuando Logística tenga la cotización, la plataforma enviará un correo a esta persona con los botones «Autorizar costo» y «Rechazar». Su respuesta queda registrada en el folio.'));
+        h('p', null, h('b', null, 'Autorización de costo. '), cfg.autorizacion_correo
+          ? 'Cuando Logística tenga la cotización, la plataforma enviará un correo a esta persona con los botones «Autorizar costo» y «Rechazar». Su respuesta queda registrada en el folio.'
+          : 'En el paso «Documentación» adjunta el correo donde se confirmó o autorizó este gasto. Queda como evidencia en el folio.'));
       var pasoCosto = h('div', { class: 'paso' }, seccion('¿Quién absorbe el costo del servicio?', null,
         opciones('costo_absorbe', '¿Quién absorbe el costo?', cfg.costos.map(function (c) { return [c, c, '']; }), { req: true }),
         texto('costo_detalle', 'Especificar quién absorbe el costo', { req: true, max: 120, todo: true, aplica: function () { return valor('costo_absorbe') === 'Otro'; } }),
         infoAut,
-        texto('aut_correo', 'Correo de la persona que autoriza el costo', { req: true, correo: true, tipo: 'email', max: 160, todo: true, aplica: cesantoni,
+        texto('aut_correo', 'Correo de la persona que autoriza el costo', { req: true, correo: true, tipo: 'email', max: 160, todo: true, aplica: function () { return cfg.autorizacion_correo && cesantoni(); },
           ejemplo: 'gerente@cesantoni.com.mx' })));
 
       /* ---------- 7 · Documentación del servicio */
@@ -520,10 +524,18 @@ window.API = API;
               selector('cotizacion', null, cotizaciones, ARCHIVOS, { boton: 'Adjuntar cotización' }),
               selector('cotizacion_correo', 'Correo de cotización', correosCotizacion, ARCHIVOS, { boton: 'Adjuntar correo', ayuda: '.eml, .msg, PDF o captura' })),
             h('div', { class: 'doc-bloque' }, h('h3', null, 'Autorización'), infoAutDoc,
-              selector('autorizacion', 'Documento externo', autorizaciones, ARCHIVOS, { boton: 'Adjuntar autorización' })),
+              selector('autorizacion', cfg.autorizacion_correo ? 'Documento externo' : 'Correo de autorización del gasto', autorizaciones, ARCHIVOS,
+                { boton: cfg.autorizacion_correo ? 'Adjuntar autorización' : 'Adjuntar correo de autorización', ayuda: cfg.autorizacion_correo ? null : '.eml, .msg, PDF o captura del correo' })),
             h('div', { class: 'doc-bloque' }, h('h3', null, 'Salida'),
               selector('salida', null, salidas, ARCHIVOS, { boton: 'Adjuntar salida', ayuda: 'Si aún no la tienes, la agregas después.' }))),
-          h('p', { class: 'gris chico centro', style: 'margin:14px 0 0' }, 'Todos son opcionales · PDF, imagen, Excel, Word o correo de hasta ' + cfg.max_mb + ' MB.')));
+          h('p', { class: 'gris chico centro', style: 'margin:14px 0 0' }, (cfg.autorizacion_correo ? 'Todos son opcionales' : 'Opcionales, salvo el correo de autorización cuando se pide') +
+            ' · PDF, imagen, Excel, Word o correo de hasta ' + cfg.max_mb + ' MB.')));
+      /* Sin autorización por correo: si lo absorbe CESANTONI o faltan menos de 48 horas, se adjunta el correo donde se confirmó el gasto. */
+      var pideEvidencia = function () { return !cfg.autorizacion_correo && (cesantoni() || fueraDeTiempo()); };
+      campos.autorizacion.validar = function (v) {
+        var yaTiene = op.modificar && (op.modificar.archivos || []).some(function (a) { return a.clase === 'autorizacion'; });
+        return pideEvidencia() && !yaTiene && !(v || []).length ? 'Adjunta el correo donde se confirmó o autorizó este gasto.' : '';
+      };
 
       /* ---------- 8 · Fechas tentativas y condiciones */
       var aviso48 = h('div', { class: 'aviso aviso-mal todo', role: 'alert' },
@@ -545,7 +557,7 @@ window.API = API;
             casilla('recoleccion_abierta', ' ', 'Recolección posterior con fecha abierta', { aplica: function () { return esTipo('entrega_recoleccion')() && !fechaAbierta(); } }),
             aviso48,
             texto('aut_correo_gerente', 'Correo del Gerente de Área que autoriza', { req: true, correo: true, tipo: 'email', max: 160, todo: true,
-              aplica: function () { return fueraDeTiempo() && !cesantoni(); } }),
+              aplica: function () { return cfg.autorizacion_correo && fueraDeTiempo() && !cesantoni(); } }),
             h('div', { class: 'condiciones todo' }, h('p', null, cfg.condiciones)),
             casilla('horario', 'Cita', 'Para recoger o entregar se requiere cita', { ayuda: 'Logística te avisará qué día se puede hacer la cita o cuándo agendarla.' }),
             texto('observaciones', 'Observaciones', { area: true, max: 2000, filas: 2, ayuda: 'Opcional. Horarios del lugar, maniobras, accesos.' }))));
@@ -588,10 +600,10 @@ window.API = API;
         var fuera = fueraDeTiempo();
         aviso48.hidden = !fuera;
         var correoAut = cesantoni() ? valor('aut_correo') : (fuera ? valor('aut_correo_gerente') : '');
-        mount(infoAutDoc, h('p', null, cesantoni() || fuera
-          ? ['Esta solicitud requiere autorización', cesantoni() ? ' del costo (lo absorbe CESANTONI)' : ' del Gerente de Área (menos de 48 horas)',
-            '. El resultado aparecerá aquí como ', h('b', null, 'Pendiente de autorización'), correoAut ? ' hasta que responda ' + correoAut + '.' : '.']
-          : 'Esta solicitud no requiere autorización de costo. Si tienes una autorización por escrito, puedes adjuntarla.'));
+        mount(infoAutDoc, h('p', null, !(cesantoni() || fuera) ? 'Esta solicitud no requiere autorización de costo. Si tienes una autorización por escrito, puedes adjuntarla.'
+          : !cfg.autorizacion_correo ? [h('b', null, 'Obligatorio: '), 'adjunta el correo donde se confirmó o autorizó el gasto', cesantoni() ? ' (lo absorbe CESANTONI).' : ' (menos de 48 horas).']
+          : ['Esta solicitud requiere autorización', cesantoni() ? ' del costo (lo absorbe CESANTONI)' : ' del Gerente de Área (menos de 48 horas)',
+            '. El resultado aparecerá aquí como ', h('b', null, 'Pendiente de autorización'), correoAut ? ' hasta que responda ' + correoAut + '.' : '.']));
         enviar.disabled = activos()[paso] && activos()[paso].el === pasoResumen && valor('acepta_condiciones') !== 'Sí';
       }
 
@@ -688,7 +700,8 @@ window.API = API;
           bloque('Servicio y especificaciones', pasoServicio, [['Tipo de servicio', d.forma_envio], ['Cantidad, dimensiones y peso', esp.join('\n')],
             ['Peso total', pesoTotal ? r1(pesoTotal) + ' kg' : ''], ['Descripción general', d.motivo]]),
           bloque('Costo y autorización', pasoCosto, [['¿Quién absorbe el costo?', d.costo_absorbe + (d.costo_detalle ? ': ' + d.costo_detalle : '')],
-            ['Autorización', d.aut_correo ? 'Pendiente de autorización · se enviará a ' + d.aut_correo : 'No requiere']]),
+            ['Autorización', d.aut_correo ? 'Pendiente de autorización · se enviará a ' + d.aut_correo
+              : (cesantoni() || fueraDeTiempo()) ? (autorizaciones.length ? 'Correo de autorización adjunto (' + autorizaciones.length + ')' : 'Falta adjuntar el correo de autorización') : 'No requiere']]),
           bloque('Documentación', pasoDocs, [['Cotización', cotizaciones.length || correosCotizacion.length ? 'Adjunta (' + (cotizaciones.length + correosCotizacion.length) + ')' : 'Pendiente'],
             ['Autorización adicional', docs(autorizaciones)], ['Salida', docs(salidas) || 'Pendiente'], ['Otros archivos', docs(generales)],
             ['Evidencias', tipo === 'devolucion' ? docs(evidencias) : ''], ['Folio', d.referencia], ['Factura', d.cliente]]),
