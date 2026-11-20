@@ -57,6 +57,7 @@ export function iniciar(ambito) {
   if (!(CFG.firebase && CFG.firebase.apiKey)) return Promise.reject(new Error('Falta la configuración de Firebase (js/config.js).'));
   const app = fb.initializeApp(CFG.firebase, 'solicitudes-' + ambito);
   auth = fb.getAuth(app);
+  auth.languageCode = 'es'; /* correos de Firebase (nueva contraseña) en español */
   db = fb.getFirestore(app);
   emular(auth, db);
   return new Promise((ok) => { const off = fb.onAuthStateChanged(auth, () => { off(); ok(true); }); }).then(cargarCatalogos).then(() => true);
@@ -307,10 +308,27 @@ export async function entrarSolicitante(correo, clave) {
   return { correo };
 }
 export async function salirSolicitante() { await fb.signOut(auth); return true; }
+/* Enlace para crear una nueva contraseña (lo envía Firebase). Si Firebase no acepta la liga de regreso (dominio no
+   autorizado), se reintenta sin ella para que el correo salga de todos modos. «Correo no registrado» se responde igual
+   que un envío correcto, para no revelar qué correos tienen cuenta; los demás errores sí se muestran. */
+const AVISO_REMITENTE = 'Revisa también «Correo no deseado» o «Spam»: lo envía noreply@proveedores-cesantoni.firebaseapp.com.';
+async function enviarEnlaceClave(correo, url) {
+  try { await fb.sendPasswordResetEmail(auth, correo, { url }); return; }
+  catch (e) {
+    if (e.code === 'auth/user-not-found') return;
+    if (!/continue-uri|unauthorized-domain|argument-error/.test(e.code || '')) throw envioFallido(e);
+  }
+  try { await fb.sendPasswordResetEmail(auth, correo); }
+  catch (e) { if (e.code !== 'auth/user-not-found') throw envioFallido(e); }
+}
+const envioFallido = (e) => fallo(e.code === 'auth/too-many-requests' ? 'Se pidieron demasiados enlaces seguidos. Espera unos minutos e intenta de nuevo.'
+  : e.code === 'auth/network-request-failed' ? 'Sin conexión. Revisa tu internet e intenta de nuevo.'
+  : 'No se pudo enviar el correo (' + (e.code || e.message) + '). Avisa al administrador del panel.');
 export async function recuperarClave(correo) {
   correo = String(correo || '').trim().toLowerCase();
-  if (correoOk(correo)) { try { await fb.sendPasswordResetEmail(auth, correo, { url: urlPortal() }); } catch (e) { /* respuesta genérica */ } }
-  return 'Si ese correo tiene solicitudes, te llegará un enlace para crear una nueva clave.';
+  if (!correoOk(correo)) throw fallo('Escribe tu correo completo.');
+  await enviarEnlaceClave(correo, urlPortal());
+  return 'Si ' + correo + ' tiene solicitudes, en unos minutos te llegará un enlace para crear una nueva clave. ' + AVISO_REMITENTE;
 }
 
 function resumen(s) {
@@ -642,8 +660,9 @@ export async function adminEntrar(correo, clave) {
 }
 export async function adminRecuperar(correo) {
   correo = String(correo || '').trim().toLowerCase();
-  if (correoOk(correo)) { try { await fb.sendPasswordResetEmail(auth, correo, { url: urlPanel() }); } catch (e) { /* respuesta genérica */ } }
-  return 'Si el correo tiene acceso, recibirá un enlace para crear una nueva contraseña.';
+  if (!correoOk(correo)) throw fallo('Escribe tu correo completo.');
+  await enviarEnlaceClave(correo, urlPanel());
+  return 'Si ' + correo + ' tiene acceso, en unos minutos le llegará un enlace para crear una nueva contraseña. ' + AVISO_REMITENTE;
 }
 export async function adminSalir() { yoCache = null; await fb.signOut(auth); return true; }
 export async function adminYo() { return publico(await sesionPanel(false)); }

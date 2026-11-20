@@ -79,12 +79,18 @@ window.API = API;
       var btn = h('button', { class: 'btn btn-pri', type: 'submit' }, 'Entrar');
       var olvide = h('button', { class: 'liga chico', type: 'button' }, 'Olvidé mi contraseña');
       olvide.addEventListener('click', function () {
-        if (!u.value.trim()) { err.textContent = 'Escribe tu correo y vuelve a dar clic en «Olvidé mi contraseña».'; err.hidden = false; return; }
-        U.run('adminRecuperar', u.value.trim()).then(function (m) { U.toast(m); });
+        err.hidden = true; info.hidden = true;
+        if (!u.value.trim()) { err.textContent = 'Escribe tu correo y vuelve a dar clic en «Olvidé mi contraseña».'; err.hidden = false; u.focus(); return; }
+        U.ocupado(olvide, true, 'Enviando…');
+        U.run('adminRecuperar', u.value.trim())
+          .then(function (m) { U.ocupado(olvide, false); info.textContent = m; info.hidden = false; })
+          .catch(function (e) { U.ocupado(olvide, false); err.textContent = e.message; err.hidden = false; });
       });
+      /* Confirmación del envío: queda a la vista (no se pierde como un aviso flotante). */
+      var info = h('div', { class: 'aviso aviso-ok chico', role: 'status', hidden: true, style: 'margin:0 0 12px' });
       var f = h('form', { class: 'tarjeta login', novalidate: true }, h('h1', null, 'Panel de Logística'),
         h('p', { class: 'gris' }, 'Acceso para el equipo de Logística de CESANTONI.'),
-        campo('Correo', u), h('div', { style: 'height:10px' }), campo('Contraseña', p), h('div', { style: 'height:12px' }), err,
+        campo('Correo', u), h('div', { style: 'height:10px' }), campo('Contraseña', p), h('div', { style: 'height:12px' }), err, info,
         h('div', { class: 'acciones' }, btn, olvide),
         h('p', { class: 'gris chico', style: 'margin-top:12px' }, 'Si ya tienes acceso al panel de proveedores, entra con el mismo correo y contraseña una vez que un administrador te invite.'));
       f.addEventListener('submit', function (ev) {

@@ -82,13 +82,18 @@ window.API = API;
       var btn = h('button', { class: 'btn btn-osc', type: 'submit' }, 'Entrar');
       var olvide = h('button', { class: 'liga chico', type: 'button' }, 'Olvidé mi clave');
       olvide.addEventListener('click', function () {
-        if (!correo.value.trim()) { err.textContent = 'Escribe tu correo y vuelve a dar clic en «Olvidé mi clave».'; err.hidden = false; return; }
-        run('recuperarClave', correo.value.trim()).then(function (m) { U.toast(m); });
+        err.hidden = true; info.hidden = true;
+        if (!correo.value.trim()) { err.textContent = 'Escribe tu correo y vuelve a dar clic en «Olvidé mi clave».'; err.hidden = false; correo.focus(); return; }
+        U.ocupado(olvide, true, 'Enviando…');
+        run('recuperarClave', correo.value.trim())
+          .then(function (m) { U.ocupado(olvide, false); info.textContent = m; info.hidden = false; })
+          .catch(function (e) { U.ocupado(olvide, false); err.textContent = e.message; err.hidden = false; });
       });
+      var info = h('div', { class: 'aviso aviso-ok chico', role: 'status', hidden: true, style: 'margin:0 0 12px' });
       var form = h('form', { novalidate: true },
         h('div', { class: 'campo', style: 'margin-bottom:10px' }, h('label', { for: 'c-correo' }, 'Correo'), correo),
         h('div', { class: 'campo', style: 'margin-bottom:12px' }, h('label', { for: 'c-clave' }, 'Clave'), clave),
-        err, h('div', { class: 'acciones' }, btn, olvide));
+        err, info, h('div', { class: 'acciones' }, btn, olvide));
       form.addEventListener('submit', function (ev) {
         ev.preventDefault();
         err.hidden = true;
@@ -816,7 +821,11 @@ window.API = API;
             /* El correo ya tiene acceso: pide su clave aquí mismo y se vuelve a enviar. */
             claveCuenta = h('input', { class: 'entrada', id: 'f-clave-cuenta', type: 'password', autocomplete: 'current-password' });
             var olvide = h('button', { class: 'liga chico', type: 'button' }, 'Olvidé mi clave');
-            olvide.addEventListener('click', function () { run('recuperarClave', datos.correo).then(function (m) { U.toast(m); }); });
+            olvide.addEventListener('click', function () {
+              U.ocupado(olvide, true, 'Enviando…');
+              run('recuperarClave', datos.correo).then(function (m) { U.ocupado(olvide, false); olvide.parentNode.textContent = m; })
+                .catch(function (er) { U.ocupado(olvide, false); U.toast(er.message); });
+            });
             mount(feedback, h('div', { class: 'aviso aviso-alerta', role: 'alert' }, h('p', null, e.message),
               h('div', { class: 'campo', style: 'max-width:320px;margin:8px 0' }, h('label', { for: 'f-clave-cuenta' }, 'Tu clave'), claveCuenta),
               h('p', null, olvide)));
